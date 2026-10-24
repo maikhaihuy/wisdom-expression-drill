@@ -1,0 +1,34 @@
+schema: spec-driven
+
+context: |
+  Expression Drill is a Telegram bot plus a Telegram Mini App that helps a small, invite-only
+  group practise English expressions by active recall: the user sees a cue (Vietnamese,
+  English or mixed) and must say the English expression out loud.
+
+  Runtime: Cloudflare Workers (TypeScript, ES modules), D1 (SQLite), Workers Static Assets
+  (hosts the Mini App under /drill/), cron triggers. Everything must fit the Cloudflare free plan.
+
+  Data model: ONE shared expression bank for all users; review state, sessions and statistics
+  are per user. The bank is written ONLY by POST /admin/sync. The sync payload (version 3) is
+  produced by the GitHub Action in the separate `english-vault` repo; it is a shared contract,
+  so any change to it needs a matching change in that repo.
+
+  Users: one admin plus invited members (tens of users, not thousands). Identity is the
+  Telegram user id. All timestamps are stored as unix seconds UTC; user-facing schedules use
+  each user's tz_offset_min (default +420, i.e. UTC+7).
+
+  Language: bot and Mini App UI text is Vietnamese; code, specs, docs and commit messages are English.
+
+  Testing: vitest with @cloudflare/vitest-pool-workers. Scheduling and selection logic lives in
+  pure functions (no D1, no clock reads) so it can be unit tested with fixed timestamps.
+
+  Out of scope for now: voice grading (Whisper), multiple accepted answers / variants per
+  expression, member-authored expressions, multiple decks, web dashboard.
+
+rules:
+  proposal:
+    - Always state what is out of scope
+  design:
+    - Any D1 schema change ships as a new numbered file in migrations/; never edit an applied migration
+  tasks:
+    - Each task names the test or command that verifies it
