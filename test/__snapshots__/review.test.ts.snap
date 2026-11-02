@@ -1,0 +1,81 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`commit summary > lists both misses with cue and first example 1`] = `
+"✅ Kết quả: <b>5/7</b>
+
+Cần ôn lại:
+✗ <b>en e02</b> — cue e02
+   <i>example e02</i>
+✗ <b>en e05</b> — cue e05
+   <i>example e05</i>"
+`;
+
+exports[`renderBatch > renders header, numbered cues and spoilers 1`] = `
+"<b>Ôn 14:00</b> · 7 cụm (2 mới)
+
+1. bỏ qua lỗi nhỏ — someone cuts in line
+   <tg-spoiler>let it slide</tg-spoiler>
+2. a &lt; b &amp; c &gt; d
+   <tg-spoiler>R&amp;D &lt;team&gt;</tg-spoiler>
+3. nghỉ thôi
+   <tg-spoiler>call it a day</tg-spoiler>
+4. phân vân
+   <tg-spoiler>on the fence</tg-spoiler>
+5. làm ẩu
+   <tg-spoiler>cut corners</tg-spoiler>
+6. đi ngủ
+   <tg-spoiler>hit the sack</tg-spoiler>
+7. dễ ợt
+   <tg-spoiler>no-brainer</tg-spoiler>
+
+Nói to từng câu rồi bấm để chấm, hoặc gõ: <code>1o 2x 3o</code>"
+`;
+
+exports[`renderBatch > renders header, numbered cues and spoilers 2`] = `
+{
+  "inline_keyboard": [
+    [
+      {
+        "callback_data": "t:b-5-1:1",
+        "text": "1 ·",
+      },
+      {
+        "callback_data": "t:b-5-1:2",
+        "text": "2 ·",
+      },
+      {
+        "callback_data": "t:b-5-1:3",
+        "text": "3 ·",
+      },
+      {
+        "callback_data": "t:b-5-1:4",
+        "text": "4 ·",
+      },
+      {
+        "callback_data": "t:b-5-1:5",
+        "text": "5 ·",
+      },
+    ],
+    [
+      {
+        "callback_data": "t:b-5-1:6",
+        "text": "6 ·",
+      },
+      {
+        "callback_data": "t:b-5-1:7",
+        "text": "7 ·",
+      },
+    ],
+    [
+      {
+        "callback_data": "a:b-5-1",
+        "text": "Đúng hết",
+      },
+      {
+        "callback_data": "c:b-5-1",
+        "text": "Chốt",
+      },
+    ],
+  ],
+}
+`;

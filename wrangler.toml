@@ -1,0 +1,22 @@
+name = "expression-drill"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "expression-drill"
+database_id = "50bb8f7a-69cd-4e7c-9c0d-63b39743bd52"
+migrations_dir = "migrations"
+
+# secrets: SYNC_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, ADMIN_CHAT_ID
+
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+PUBLIC_URL = "https://expression-drill.maikhaihuy.workers.dev"
+DEFAULT_TZ_OFFSET_MIN = "420"
+BATCH_MIN = "5"
+BATCH_MAX = "10"
+NEW_PER_BATCH = "3"
+NEW_PER_DAY = "20"
