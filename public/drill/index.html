@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Luyện phản xạ</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main id="app">
+      <section id="screen-message" class="screen center" hidden>
+        <p id="message-icon" class="icon" aria-hidden="true">💬</p>
+        <p id="message-text" class="message"></p>
+        <button id="message-action" class="primary" type="button" hidden></button>
+      </section>
+
+      <section id="screen-loading" class="screen center">
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="loading-text" class="hint">Đang tải…</p>
+      </section>
+
+      <section id="screen-start" class="screen center" hidden>
+        <p class="icon" aria-hidden="true">⚡</p>
+        <h1>Luyện phản xạ</h1>
+        <p id="start-meta" class="lead"></p>
+        <p class="hint">Đọc gợi ý, nói to cụm tiếng Anh, rồi chạm để xem đáp án và tự chấm.</p>
+        <p class="hint small">Vuốt phải hoặc bấm ✓ Đúng · vuốt trái hoặc bấm ✗ Sai</p>
+        <button id="start-btn" class="primary" type="button">Bắt đầu</button>
+      </section>
+
+      <section id="screen-drill" class="screen" hidden>
+        <header class="topbar">
+          <div class="timebar" aria-hidden="true"><div id="time-fill"></div></div>
+          <div class="topline">
+            <span id="time-left" aria-label="Thời gian còn lại">5:00</span>
+            <span id="sync-status" class="hint small" hidden>Đang thử gửi lại…</span>
+            <span id="counter" class="hint">0 thẻ</span>
+          </div>
+        </header>
+
+        <div id="card" class="card" role="button" tabindex="0" aria-live="polite">
+          <div id="countdown" class="countdown">5</div>
+          <p id="cue" class="cue"></p>
+          <div id="answer" class="answer" hidden>
+            <p id="en" class="en"></p>
+            <p id="example" class="example"></p>
+          </div>
+          <p id="tap-hint" class="hint small">Chạm để xem đáp án</p>
+        </div>
+
+        <div id="grade" class="grade" hidden>
+          <button id="btn-miss" class="miss" type="button">✗ Sai</button>
+          <button id="btn-hit" class="hit" type="button">✓ Đúng</button>
+        </div>
+      </section>
+
+      <section id="screen-summary" class="screen" hidden>
+        <h1>Xong rồi! 🎉</h1>
+        <div class="stats">
+          <div><strong id="sum-cards">0</strong><span>thẻ</span></div>
+          <div><strong id="sum-accuracy">–</strong><span>đúng ngay</span></div>
+          <div><strong id="sum-latency">–</strong><span>trung vị</span></div>
+        </div>
+        <div id="sum-missed" hidden>
+          <h2>Cần ôn lại</h2>
+          <ul id="sum-missed-list"></ul>
+        </div>
+        <button id="close-btn" class="primary" type="button">Đóng</button>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

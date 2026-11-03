@@ -155,6 +155,50 @@ The bot then replies with the score and, for each missed item, its expression, c
 
 Any other command replies with the command list.
 
+## Reflex drill (Mini App)
+
+A 5-minute, timed, self-graded drill that runs inside Telegram. Each card shows only the cue with a 5-second countdown. Tap to reveal the expression early; if the time runs out, it is revealed with **Sai** pre-selected. Grade each card with ✓ Đúng / ✗ Sai, by swiping right or left, or with → / ← on a desktop keyboard.
+
+- **Deck:** up to 60 expressions the user has already learned (box 1 or higher). About half are the ones they miss most, 30% are due, and 20% are random from boxes 2–5. A user who has learned nothing yet is asked to practise with batches first.
+- **Missed cards** come back 3–5 cards later until answered correctly. Only the first attempt at each expression counts toward review state. An early correct answer on a card that isn't due yet only adds a hit; it never moves the card to a higher box.
+- **Finishing** sends a summary to the chat: cards, first-try accuracy, median reaction time and the missed expressions. It also marks the day as drilled, so the 20:00 batch leaves out the drill button.
+- **Settings:** `DRILL_SECONDS`, `CARD_SECONDS` and `DRILL_DECK_SIZE` in `wrangler.toml` `[vars]`.
+
+### Setup
+
+The page lives in `public/drill/` and is served as static assets by the same Worker (`assets = { directory = "public" }`), so `npx wrangler deploy` publishes it. Check that `https://expression-drill.<subdomain>.workers.dev/drill/` loads; outside Telegram it shows a notice to open it from the bot.
+
+Users can open the drill in three ways: the button that `/drill` sends, the button on the 20:00 batch, and the bot's menu button. To set the menu button, which sits next to the message field:
+
+1. Open @BotFather and send `/mybots`, then choose the bot.
+2. Go to **Bot Settings → Menu Button → Configure menu button**.
+3. Send the URL `https://expression-drill.<subdomain>.workers.dev/drill/`.
+4. Send the button title, for example `Luyện phản xạ`.
+
+To remove the button, choose **Remove menu button** in the same menu.
+
+### API
+
+The Mini App calls three endpoints. Each request carries `X-Init-Data: <Telegram.WebApp.initData>`. The Worker checks its signature against `TELEGRAM_BOT_TOKEN`, rejects data older than 24 hours, and takes the user only from it, never from the request body.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/drill/start` | Creates a drill session and returns the deck. `401` if the user is not registered, `409` if they have learned nothing yet. |
+| `POST /api/drill/answers` | Stores up to 100 answers. A position that is already stored is ignored, so retries are safe. |
+| `POST /api/drill/finish` | Closes the session and returns the summary. Calling it again returns the same summary without a second chat message. |
+
+The app sends answers every 10 cards and at the end, and retries failed requests while it stays open. If the app is closed early, the answers already sent are kept and the day is not marked as drilled.
+
+### Testing locally
+
+Outside Telegram the page has no init data. To try the full flow in a browser against `npm run dev`, sign init data with the bot token from `.dev.vars` and pass it in the URL hash, the same way Telegram does:
+
+```
+http://localhost:8787/drill/#tgWebAppData=<url-encoded init data>&tgWebAppVersion=8.0&tgWebAppPlatform=tdesktop
+```
+
+Open it in a fresh tab. A hash-only change does not reload Telegram's script. The local user must exist and have learned expressions.
+
 ## Sync endpoint
 
 `POST /admin/sync` with `Authorization: Bearer <SYNC_TOKEN>` and a version-3 payload:

@@ -71,6 +71,10 @@ export const t = {
     `Hộp: ${s.boxes.map((n, i) => `${i + 1}:${n}`).join("  ")}\n` +
     `Độ chính xác 7 ngày: ${s.accuracy === null ? "chưa có" : `${Math.round(s.accuracy * 100)}%`}\n` +
     `Chuỗi ngày: ${s.streak} ngày`,
+  drillSummary: (cards: number, accuracy: number | null, medianMs: number | null) =>
+    `⚡ <b>Luyện phản xạ xong</b>: ${cards} thẻ` +
+    (accuracy === null ? "" : ` · đúng ngay ${Math.round(accuracy * 100)}%`) +
+    (medianMs === null ? "" : ` · trung vị ${(medianMs / 1000).toFixed(1).replace(".", ",")} giây`),
   hardTitle: "<b>Những cụm hay quên nhất</b>",
   hardEmpty: "Chưa đủ dữ liệu. Cần trả lời mỗi cụm ít nhất 3 lần.",
   membersTitle: "<b>Thành viên</b>",

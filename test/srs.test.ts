@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyResult, missRate, nextDue, selectBatch, type Candidate, type CardState } from "../src/srs";
+import { applyResult, missRate, nextDue, selectBatch, selectDrillDeck, type Candidate, type CardState } from "../src/srs";
 
 const TZ = 420; // UTC+7
 const H = 3600;
@@ -188,5 +188,59 @@ describe("selectBatch", () => {
 
   it("returns nothing for an empty bank", () => {
     expect(selectBatch({ ...base, due: [], fresh: [], notDue: [] })).toEqual([]);
+  });
+});
+
+// ---------- Drill deck ----------
+
+describe("selectDrillDeck", () => {
+  // Deterministic PRNG so "random" picks are reproducible.
+  const seeded = (seed: number) => () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+  const learned = (n: number, f: (i: number) => Partial<Candidate> = () => ({})) =>
+    Array.from({ length: n }, (_, i) => cand(`c${String(i).padStart(3, "0")}`, { box: 1 + (i % 6), due_at: T + D, ...f(i) }));
+
+  it("normal deck: 60 distinct learned cards", () => {
+    const cards = learned(200, (i) => ({ hits: i % 7, misses: i % 3, due_at: i % 4 === 0 ? T - H : T + D }));
+    const deck = selectDrillDeck(cards, 60, T, seeded(1));
+    expect(deck).toHaveLength(60);
+    expect(new Set(deck.map((c) => c.id)).size).toBe(60);
+    expect(deck.every((c) => c.box >= 1)).toBe(true);
+  });
+
+  it("never includes new cards (box 0)", () => {
+    const cards = [...learned(20), ...many("new", 20, () => ({ box: 0 }))];
+    const deck = selectDrillDeck(cards, 60, T, seeded(2));
+    expect(deck).toHaveLength(20);
+    expect(deck.some((c) => c.id.startsWith("new"))).toBe(false);
+  });
+
+  it("splits about 50% hardest, 30% due, 20% boxes 2–5", () => {
+    const hard = learned(40, (i) => ({ misses: 10, box: 1, due_at: T + D, id: `hard${i}` })).map((c, i) => ({ ...c, id: `hard${i}` }));
+    const due = learned(40, () => ({ box: 6, due_at: T - H })).map((c, i) => ({ ...c, id: `due${i}` }));
+    const mid = learned(40, (i) => ({ box: 2 + (i % 4), hits: 20, due_at: T + D })).map((c, i) => ({ ...c, id: `mid${i}` }));
+    const deck = selectDrillDeck([...hard, ...due, ...mid], 60, T, seeded(3));
+    const countOf = (p: string) => deck.filter((c) => c.id.startsWith(p)).length;
+    expect([countOf("hard"), countOf("due"), countOf("mid")]).toEqual([30, 18, 12]);
+  });
+
+  it("fills a short group from the others", () => {
+    // No due cards and nothing in boxes 2–5: the whole deck comes from the hardest.
+    const cards = learned(100, () => ({ box: 1, due_at: T + D }));
+    expect(selectDrillDeck(cards, 60, T, seeded(4))).toHaveLength(60);
+  });
+
+  it("small history: all 12 learned cards", () => {
+    const cards = learned(12);
+    expect(idsOf(selectDrillDeck(cards, 60, T, seeded(5)))).toEqual(idsOf(cards));
+  });
+
+  it("empty history: empty deck", () => {
+    expect(selectDrillDeck([], 60, T, seeded(6))).toEqual([]);
+  });
+
+  it("is shuffled", () => {
+    const cards = learned(60, (i) => ({ misses: 60 - i }));
+    const deck = selectDrillDeck(cards, 60, T, seeded(7));
+    expect(deck.map((c) => c.id)).not.toEqual(idsOf(deck));
   });
 });

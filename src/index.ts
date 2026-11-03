@@ -1,4 +1,5 @@
 import { handleUpdate } from "./bot";
+import { handleDrillApi } from "./drill-api";
 import { runSchedule } from "./review";
 import { handleSync } from "./sync";
 import type { TgUpdate } from "./telegram";
@@ -16,6 +17,9 @@ export interface Env {
   BATCH_MAX?: string;
   NEW_PER_BATCH?: string;
   NEW_PER_DAY?: string;
+  DRILL_SECONDS?: string;
+  CARD_SECONDS?: string;
+  DRILL_DECK_SIZE?: string;
 }
 
 export default {
@@ -39,6 +43,8 @@ export default {
       ctx.waitUntil(handleUpdate(env, update, now).catch((err) => console.error("update failed", update.update_id, err)));
       return new Response("ok");
     }
+
+    if (pathname.startsWith("/api/drill/")) return handleDrillApi(request, env, ctx);
 
     return new Response("Not Found", { status: 404 });
   },

@@ -26,12 +26,12 @@
 - [x] 4.1 Implement `/next`, `/drill`, `/pause`, `/resume` and `/tz` with argument validation, and verify one test per `bot-commands` scenario for these commands
 - [x] 4.2 Implement `/stats` (box counts, 7-day accuracy, streak) and `/hard`, and verify against a fixture user with known history
 - [x] 4.3 Implement `/members` (admin only) and the unknown-command help, and verify tests for admin, member and typo cases
-- [ ] 4.4 Register the bot command menu via `setMyCommands` in a deploy script, and verify the Telegram client shows the list
+- [x] 4.4 Register the bot command menu via `setMyCommands` in a deploy script, and verify the Telegram client shows the list
 
 ## 5. Integration
 
-- [ ] 5.1 Deploy, run `setWebhook`, bootstrap the admin and invite one test member, then verify end to end that `/next` → grade with buttons → summary works, and that the next scheduled hour delivers a batch
-- [ ] 5.2 Update README.md with the webhook setup, cron behaviour and commands, and verify the documented `setWebhook` command works as written
+- [x] 5.1 Deploy, run `setWebhook`, bootstrap the admin and invite one test member, then verify end to end that `/next` → grade with buttons → summary works, and that the next scheduled hour delivers a batch
+- [x] 5.2 Update README.md with the webhook setup, cron behaviour and commands, and verify the documented `setWebhook` command works as written
 
 ## Workflow follow-up
 

@@ -2,6 +2,9 @@ name = "expression-drill"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
 
+# Mini App (public/drill/) is served as static assets; other paths fall through to the Worker.
+assets = { directory = "public" }
+
 [[d1_databases]]
 binding = "DB"
 database_name = "expression-drill"
@@ -20,3 +23,6 @@ BATCH_MIN = "5"
 BATCH_MAX = "10"
 NEW_PER_BATCH = "3"
 NEW_PER_DAY = "20"
+DRILL_SECONDS = "300"
+CARD_SECONDS = "5"
+DRILL_DECK_SIZE = "60"

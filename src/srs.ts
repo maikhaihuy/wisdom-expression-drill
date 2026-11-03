@@ -118,11 +118,41 @@ export function selectBatch<T extends Candidate>(input: SelectInput<T>): T[] {
   return shuffle(chosen, rng);
 }
 
-function shuffle<T>(items: T[], rng: () => number): T[] {
+export function shuffle<T>(items: T[], rng: () => number): T[] {
   const a = [...items];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+// Drill deck from the user's learned (box >= 1) active cards: about 50% hardest by
+// miss rate, 30% due, 20% random from boxes 2–5, no duplicates. Groups that run
+// short are filled with the hardest remaining cards. Returned in random order.
+export function selectDrillDeck<T extends Candidate>(cards: T[], size: number, now: number, rng: () => number): T[] {
+  const learned = cards.filter((c) => c.box >= 1);
+  const hardN = Math.round(size * 0.5);
+  const dueN = Math.round(size * 0.3);
+  const randomN = size - hardN - dueN;
+
+  const deck: T[] = [];
+  const taken = new Set<string>();
+  const take = (list: T[], n: number) => {
+    for (const c of list) {
+      if (n <= 0) break;
+      if (taken.has(c.id)) continue;
+      taken.add(c.id);
+      deck.push(c);
+      n--;
+    }
+  };
+
+  const hardest = [...learned].sort((a, b) => missRate(b) - missRate(a) || a.box - b.box);
+  take(hardest, hardN);
+  take(learned.filter((c) => c.due_at <= now).sort((a, b) => a.due_at - b.due_at), dueN);
+  take(shuffle(learned.filter((c) => c.box >= 2 && c.box <= 5), rng), randomN);
+  take(hardest, size - deck.length);
+
+  return shuffle(deck, rng);
 }

@@ -1,0 +1,350 @@
+/* Colours come from Telegram's theme variables, with light/dark fallbacks outside Telegram. */
+:root {
+  --bg: var(--tg-theme-bg-color, #ffffff);
+  --bg2: var(--tg-theme-secondary-bg-color, #f1f3f6);
+  --text: var(--tg-theme-text-color, #111418);
+  --hint: var(--tg-theme-hint-color, #7a828c);
+  --accent: var(--tg-theme-button-color, #2f8ae5);
+  --accent-text: var(--tg-theme-button-text-color, #ffffff);
+  --hit: #2ea05a;
+  --miss: #e0483e;
+  --radius: 18px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--tg-theme-bg-color, #17212b);
+    --bg2: var(--tg-theme-secondary-bg-color, #232e3c);
+    --text: var(--tg-theme-text-color, #f5f5f5);
+    --hint: var(--tg-theme-hint-color, #8b98a5);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+#app {
+  height: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+}
+
+.screen {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.screen[hidden] {
+  display: none;
+}
+
+.center {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+h1 {
+  margin: 0;
+  font-size: 26px;
+}
+
+h2 {
+  margin: 8px 0 4px;
+  font-size: 17px;
+  color: var(--hint);
+  font-weight: 600;
+}
+
+.icon {
+  margin: 0;
+  font-size: 48px;
+}
+
+.lead {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0;
+  color: var(--hint);
+}
+
+.small {
+  font-size: 14px;
+}
+
+.message {
+  margin: 0;
+  max-width: 340px;
+}
+
+button {
+  font: inherit;
+  border: 0;
+  border-radius: 14px;
+  padding: 15px 20px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  min-width: 200px;
+  margin-top: 8px;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+/* ---------- loading ---------- */
+
+.spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid var(--bg2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- drill ---------- */
+
+.topbar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.timebar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg2);
+  overflow: hidden;
+}
+
+#time-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  transform-origin: left;
+}
+
+.topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-variant-numeric: tabular-nums;
+}
+
+#time-left {
+  font-weight: 600;
+}
+
+.card {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  padding: 28px 22px;
+  border-radius: var(--radius);
+  background: var(--bg2);
+  text-align: center;
+  touch-action: none;
+  outline: none;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  will-change: transform;
+}
+
+.card.dragging {
+  transition: none;
+}
+
+.card.lean-hit {
+  box-shadow: inset 0 0 0 3px var(--hit);
+}
+
+.card.lean-miss {
+  box-shadow: inset 0 0 0 3px var(--miss);
+}
+
+.countdown {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--hint);
+  font-variant-numeric: tabular-nums;
+}
+
+.countdown.low {
+  color: var(--miss);
+}
+
+.cue {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.4;
+}
+
+.answer {
+  border-top: 1px solid color-mix(in srgb, var(--hint) 35%, transparent);
+  padding-top: 16px;
+  width: 100%;
+}
+
+.answer[hidden] {
+  display: none;
+}
+
+.en {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.example {
+  margin: 8px 0 0;
+  font-style: italic;
+  color: var(--hint);
+}
+
+.grade {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.grade[hidden] {
+  display: none;
+}
+
+.grade button {
+  font-size: 19px;
+  font-weight: 700;
+  padding: 18px 0;
+  background: var(--bg2);
+  color: var(--text);
+}
+
+.grade .hit {
+  color: var(--hit);
+}
+
+.grade .miss {
+  color: var(--miss);
+}
+
+.grade button.selected.hit {
+  background: var(--hit);
+  color: #fff;
+}
+
+.grade button.selected.miss {
+  background: var(--miss);
+  color: #fff;
+}
+
+/* ---------- summary ---------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.stats div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 6px;
+  border-radius: 14px;
+  background: var(--bg2);
+}
+
+.stats strong {
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats span {
+  font-size: 14px;
+  color: var(--hint);
+}
+
+#sum-missed {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+#sum-missed[hidden] {
+  display: none;
+}
+
+#sum-missed ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#sum-missed li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--bg2);
+}
+
+#sum-missed li b {
+  display: block;
+}
+
+#sum-missed li span {
+  color: var(--hint);
+  font-size: 15px;
+}
+
+#screen-summary .primary {
+  align-self: center;
+  margin-top: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .spinner {
+    transition: none;
+    animation: none;
+  }
+}

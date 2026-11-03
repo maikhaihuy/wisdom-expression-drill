@@ -7,6 +7,9 @@ export interface Config {
   newPerBatch: number;
   newPerDay: number;
   drillUrl: string;
+  drillSeconds: number;
+  cardSeconds: number;
+  drillDeckSize: number;
 }
 
 const int = (v: string | undefined, fallback: number) => {
@@ -22,5 +25,8 @@ export function config(env: Env): Config {
     newPerBatch: int(env.NEW_PER_BATCH, 3),
     newPerDay: int(env.NEW_PER_DAY, 20),
     drillUrl: `${(env.PUBLIC_URL ?? "").replace(/\/+$/, "")}/drill/`,
+    drillSeconds: int(env.DRILL_SECONDS, 300),
+    cardSeconds: int(env.CARD_SECONDS, 5),
+    drillDeckSize: int(env.DRILL_DECK_SIZE, 60),
   };
 }
