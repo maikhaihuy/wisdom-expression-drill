@@ -53,7 +53,7 @@ export const t = {
   reviewAgain: "Cần ôn lại:",
 
   // ----- commands -----
-  drillOpen: "Luyện phản xạ: 5 phút, mỗi cụm 5 giây.",
+  drillOpen: (minutes: number, cardSeconds: number) => `Luyện phản xạ: ${minutes} phút, mỗi cụm ${cardSeconds} giây.`,
   pauseUsage: "Cách dùng: <code>/pause 3h</code> hoặc <code>/pause 2d</code> (từ 1 giờ đến 30 ngày).",
   paused: (until: string) => `Đã tạm dừng nhắc đến ${until}. Gửi /resume để tiếp tục sớm hơn.`,
   resumed: "Đã bật lại nhắc ôn.",

@@ -1,10 +1,10 @@
-# Spec Delta
+# reflex-drill Specification
 
 ## Purpose
 
 Provides a five-minute, timed, self-graded drill inside Telegram that trains fast recall of expressions the user has already learned, and feeds the results into their review state.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Mini App authentication
 Every drill API request SHALL carry Telegram Mini App init data in the `X-Init-Data` header. The system SHALL accept the request only if the init data hash is valid for the bot token, `auth_date` is at most 24 hours old, and the user exists with `active = 1`. Otherwise the response is HTTP 401.
@@ -48,7 +48,7 @@ Starting a drill SHALL create a session and return up to `DRILL_DECK_SIZE` (defa
 - **THEN** no session is created and the Mini App says to practise with batches first
 
 ### Requirement: Timed cards
-A drill SHALL last `DRILL_SECONDS` (default 300). Each card SHALL show only the cue with a `CARD_SECONDS` (default 5) countdown, then reveal the expression and its first example. The user can reveal early by tapping. The time from cue display to reveal SHALL be recorded as latency.
+A drill SHALL last `DRILL_SECONDS` (default 300). Each card SHALL show only the cue with a `CARD_SECONDS` (default 10) countdown, then reveal the expression and its first example. The user can reveal early by tapping. The time from cue display to reveal SHALL be recorded as latency.
 
 #### Scenario: Early reveal
 - **WHEN** the user taps 2.1 seconds after a cue appears

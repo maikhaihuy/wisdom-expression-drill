@@ -11,13 +11,13 @@
 ## 2. Mini App
 
 - [x] 2.1 Create `public/drill/` (HTML, CSS with Telegram theme variables, JS state machine) and add `assets` to wrangler.toml, and verify that `wrangler dev` serves `/drill/` and the page renders outside Telegram with a "please open in Telegram" notice
-- [ ] 2.2 Implement the card flow (countdown, tap-to-reveal, timeout pre-selects "Sai", swipe and buttons, missed card reinserted 3–5 later), and verify a manual run in Telegram Desktop where a missed card reappears and the latency is recorded
-- [ ] 2.3 Implement the buffered answer flush with retry and the finish screen, and verify that with network throttling in devtools no answers are lost and the summary matches the server response
+- [x] 2.2 Implement the card flow (countdown, tap-to-reveal, timeout pre-selects "Sai", swipe and buttons, missed card reinserted 3–5 later), and verify a manual run in Telegram Desktop where a missed card reappears and the latency is recorded
+- [x] 2.3 Implement the buffered answer flush with retry and the finish screen, and verify that with network throttling in devtools no answers are lost and the summary matches the server response
 
 ## 3. Integration
 
-- [ ] 3.1 Deploy, set the BotFather menu button, and run a full 5-minute drill on a phone, then verify the chat summary arrives and `/stats` reflects the drill hits and misses
-- [ ] 3.2 Document the Mini App setup in README.md, and verify the documented BotFather steps match the current BotFather UI
+- [x] 3.1 Deploy, set the BotFather menu button, and run a full 5-minute drill on a phone, then verify the chat summary arrives and `/stats` reflects the drill hits and misses
+- [x] 3.2 Document the Mini App setup in README.md, and verify the documented BotFather steps match the current BotFather UI
 
 ## Workflow follow-up
 

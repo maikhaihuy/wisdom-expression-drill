@@ -41,7 +41,7 @@ describe("POST /api/drill/start", () => {
     await learnedUser(12);
     const res = await api("start", undefined);
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ cardSeconds: 5, totalSeconds: 300 });
+    expect(res.body).toMatchObject({ cardSeconds: 10, totalSeconds: 300 });
     expect(res.body.cards).toHaveLength(12);
     expect(res.body.cards[0]).toEqual({ exprId: expect.any(String), cue: expect.any(String), en: expect.any(String), example: expect.stringMatching(/^example /) });
     expect(await sessionRow(res.body.sessionId)).toMatchObject({ user_id: 5, kind: "drill", closed_at: null });

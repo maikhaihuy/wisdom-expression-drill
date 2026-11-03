@@ -53,7 +53,7 @@ This reuses `srs.missRate`. The SQL loads the user's learned active expressions 
 
 ### Alternative considered
 
-A bot-only drill that sends one message per card was rejected. Telegram message latency and rate limits make 5-second cards unreliable, and the chat would fill with dozens of messages per day.
+A bot-only drill that sends one message per card was rejected. Telegram message latency and rate limits make 10-second cards unreliable, and the chat would fill with dozens of messages per day.
 
 ## Risks / Trade-offs
 

@@ -23,8 +23,10 @@ export async function handleCommand(env: Env, user: User, cmd: string, arg: stri
     case "next":
       return (await deliverBatch(env, user, now, deps.rng)) ? null : { text: t.emptyBank };
 
-    case "drill":
-      return { text: t.drillOpen, reply_markup: { inline_keyboard: [drillRow(config(env).drillUrl)] } };
+    case "drill": {
+      const cfg = config(env);
+      return { text: t.drillOpen(Math.round(cfg.drillSeconds / 60), cfg.cardSeconds), reply_markup: { inline_keyboard: [drillRow(cfg.drillUrl)] } };
+    }
 
     case "pause": {
       const seconds = parsePause(arg);

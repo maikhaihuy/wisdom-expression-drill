@@ -157,7 +157,7 @@ Any other command replies with the command list.
 
 ## Reflex drill (Mini App)
 
-A 5-minute, timed, self-graded drill that runs inside Telegram. Each card shows only the cue with a 5-second countdown. Tap to reveal the expression early; if the time runs out, it is revealed with **Sai** pre-selected. Grade each card with ✓ Đúng / ✗ Sai, by swiping right or left, or with → / ← on a desktop keyboard.
+A 5-minute, timed, self-graded drill that runs inside Telegram. Each card shows only the cue with a countdown (`CARD_SECONDS`, 10 seconds). Tap to reveal the expression early; if the time runs out, it is revealed with **Sai** pre-selected. Grade each card with ✓ Đúng / ✗ Sai, by swiping right or left, or with → / ← on a desktop keyboard.
 
 - **Deck:** up to 60 expressions the user has already learned (box 1 or higher). About half are the ones they miss most, 30% are due, and 20% are random from boxes 2–5. A user who has learned nothing yet is asked to practise with batches first.
 - **Missed cards** come back 3–5 cards later until answered correctly. Only the first attempt at each expression counts toward review state. An early correct answer on a card that isn't due yet only adds a hit; it never moves the card to a higher box.

@@ -63,6 +63,7 @@ describe("/drill", () => {
     const tg = mockTelegram();
     await send(msg(5, "/drill"));
     expect(tg.sent()[0].body.reply_markup.inline_keyboard).toEqual([[{ text: t.drillButton, web_app: { url: "https://drill.test/drill/" } }]]);
+    expect(tg.lastText()).toBe("Luyện phản xạ: 5 phút, mỗi cụm 10 giây.");
   });
 });
 
