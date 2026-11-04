@@ -76,7 +76,8 @@ export interface ExprSeed {
   en?: string;
   cue?: string;
   examples?: string[];
-  week?: string;
+  unit?: number;
+  position?: number;
   archived?: number;
 }
 
@@ -84,9 +85,9 @@ export async function addExpressions(seeds: (ExprSeed | string)[]): Promise<void
   const stmts = seeds.map((s) => {
     const e = typeof s === "string" ? { id: s } : s;
     return env.DB.prepare(
-      `INSERT INTO expressions (id, en, cue, examples, tags, added_week, content_hash, archived, created_at, updated_at)
-       VALUES (?, ?, ?, ?, '[]', ?, 'h', ?, 0, 0)`,
-    ).bind(e.id, e.en ?? `en ${e.id}`, e.cue ?? `cue ${e.id}`, JSON.stringify(e.examples ?? [`example ${e.id}`]), e.week ?? "2026-W43", e.archived ?? 0);
+      `INSERT INTO expressions (id, en, cue, examples, tags, unit, position, content_hash, archived, created_at, updated_at)
+       VALUES (?, ?, ?, ?, '[]', ?, ?, 'h', ?, 0, 0)`,
+    ).bind(e.id, e.en ?? `en ${e.id}`, e.cue ?? `cue ${e.id}`, JSON.stringify(e.examples ?? [`example ${e.id}`]), e.unit ?? 1, e.position ?? 1, e.archived ?? 0);
   });
   if (stmts.length) await env.DB.batch(stmts);
 }

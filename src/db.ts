@@ -3,13 +3,14 @@ import type { SyncItem } from "./sync";
 export interface BankRow {
   id: string;
   content_hash: string;
-  added_week: string;
+  unit: number;
+  position: number;
   archived: number;
 }
 
 export async function loadBank(db: D1Database): Promise<BankRow[]> {
   const { results } = await db
-    .prepare("SELECT id, content_hash, added_week, archived FROM expressions")
+    .prepare("SELECT id, content_hash, unit, position, archived FROM expressions")
     .all<BankRow>();
   return results;
 }
@@ -32,7 +33,8 @@ function itemRows(items: SyncItem[]): string {
       examples: JSON.stringify(i.examples),
       note: i.note,
       tags: JSON.stringify(i.tags),
-      added_week: i.added_week,
+      unit: i.unit,
+      position: i.position,
       content_hash: i.content_hash,
     })),
   );
@@ -45,7 +47,8 @@ const ROWS = `
          json_extract(value, '$.examples')     AS examples,
          json_extract(value, '$.note')         AS note,
          json_extract(value, '$.tags')         AS tags,
-         json_extract(value, '$.added_week')   AS added_week,
+         json_extract(value, '$.unit')         AS unit,
+         json_extract(value, '$.position')     AS position,
          json_extract(value, '$.content_hash') AS content_hash
   FROM json_each(?1)`;
 
@@ -53,8 +56,8 @@ export function insertExpressions(db: D1Database, items: SyncItem[], now: number
   return db
     .prepare(
       `INSERT INTO expressions
-         (id, en, cue, examples, note, tags, added_week, content_hash, archived, created_at, updated_at)
-       SELECT id, en, cue, examples, note, tags, added_week, content_hash, 0, ?2, ?2 FROM (${ROWS})`,
+         (id, en, cue, examples, note, tags, unit, position, content_hash, archived, created_at, updated_at)
+       SELECT id, en, cue, examples, note, tags, unit, position, content_hash, 0, ?2, ?2 FROM (${ROWS})`,
     )
     .bind(itemRows(items), now);
 }
@@ -65,7 +68,7 @@ export function overwriteExpressions(db: D1Database, items: SyncItem[], now: num
     .prepare(
       `UPDATE expressions
        SET en = r.en, cue = r.cue, examples = r.examples, note = r.note, tags = r.tags,
-           added_week = r.added_week, content_hash = r.content_hash, archived = 0, updated_at = ?2
+           unit = r.unit, position = r.position, content_hash = r.content_hash, archived = 0, updated_at = ?2
        FROM (${ROWS}) AS r
        WHERE expressions.id = r.id`,
     )

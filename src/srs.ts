@@ -77,7 +77,7 @@ export interface Candidate {
 
 export interface SelectInput<T extends Candidate> {
   due: T[];
-  fresh: T[]; // newest added_week first
+  fresh: T[]; // course order: lowest unit, then lowest position
   notDue: T[];
   previousBatchIds: Set<string>;
   newAllowed: number;

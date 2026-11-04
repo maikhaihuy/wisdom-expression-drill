@@ -83,7 +83,7 @@ export async function planBatches(
       .prepare(
         `SELECT e.id, e.en, e.cue, e.examples, 0 AS box, 0 AS due_at, 0 AS hits, 0 AS misses FROM expressions e
          WHERE e.archived = 0 AND NOT EXISTS (SELECT 1 FROM card_state c WHERE c.user_id = ?1 AND c.expr_id = e.id)
-         ORDER BY e.added_week DESC, e.id LIMIT ?2`,
+         ORDER BY e.unit, e.position, e.id LIMIT ?2`,
       )
       .bind(u.id, FRESH_LIMIT),
     db

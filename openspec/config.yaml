@@ -9,9 +9,12 @@ context: |
   (hosts the Mini App under /drill/), cron triggers. Everything must fit the Cloudflare free plan.
 
   Data model: ONE shared expression bank for all users; review state, sessions and statistics
-  are per user. The bank is written ONLY by POST /admin/sync. The sync payload (version 3) is
-  produced by the GitHub Action in the separate `english-vault` repo; it is a shared contract,
-  so any change to it needs a matching change in that repo.
+  are per user. The bank is written ONLY by POST /admin/sync. The vault organises expressions
+  by course unit (one file per unit, `unit-NN.md`); each expression has a `unit` and a 1-based
+  `position` inside it, and new expressions are introduced in course order. The sync payload
+  (version 4, mode `all` or `unit`) is produced by the GitHub Action in the separate
+  `english-vault` repo; it is a shared contract, so any change to it needs a matching change
+  in that repo.
 
   Users: one admin plus invited members (tens of users, not thousands). Identity is the
   Telegram user id. All timestamps are stored as unix seconds UTC; user-facing schedules use

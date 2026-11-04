@@ -113,7 +113,7 @@ Run it again whenever the command list in `src/i18n.ts` changes. The scripts nee
 
 The cron runs every hour (`0 * * * *`). Each run sends one batch to every active, unpaused user whose local time is an even hour from 08:00 to 22:00. Local time comes from each user's `/tz`, which defaults to `DEFAULT_TZ_OFFSET_MIN` (UTC+7).
 
-- A batch has 5–10 expressions. Due items come first, hardest first; then new items (at most 3 per batch and 20 per day); then items that aren't due yet, to reach 5. The previous batch's items are left out when possible.
+- A batch has 5–10 expressions. Due items come first, hardest first; then new items in course order, lowest unit and position first (at most 3 per batch and 20 per day); then items that aren't due yet, to reach 5. The previous batch's items are left out when possible.
 - Sending a new batch closes the previous one: all of its items count as skipped, including marks that were never committed, and its buttons are removed.
 - When the user has not drilled today, the 20:00 batch also has a button that opens the drill Mini App.
 - Leitner boxes 1–6 set the next review: 4 h, 1 d, 3 d, 7 d, 16 d, 35 d. A miss sends an item back to box 1. Due times that would fall between 22:00 and 08:00 move to 08:00.
@@ -201,13 +201,13 @@ Open it in a fresh tab. A hash-only change does not reload Telegram's script. Th
 
 ## Sync endpoint
 
-`POST /admin/sync` with `Authorization: Bearer <SYNC_TOKEN>` and a version-3 payload:
+`POST /admin/sync` with `Authorization: Bearer <SYNC_TOKEN>` and a version-4 payload. The vault keeps one file per course unit (`unit-NN.md`), and each item carries its `unit` and its 1-based `position` in that file:
 
 ```json
 {
-  "version": 3,
-  "mode": "week",
-  "week": "2026-W43",
+  "version": 4,
+  "mode": "unit",
+  "unit": 3,
   "items": [
     {
       "id": "let-it-slide",
@@ -216,15 +216,18 @@ Open it in a fresh tab. A hash-only change does not reload Telegram's script. Th
       "examples": ["Just let it slide this time, he's new."],
       "note": "informal",
       "tags": [],
-      "added_week": "2026-W43",
+      "unit": 3,
+      "position": 1,
       "content_hash": "9f2c…"
     }
   ]
 }
 ```
 
-- `mode: "all"` syncs the whole bank, and `week` is omitted or null. `mode: "week"` syncs one week, and every item's `added_week` must equal `week`.
-- Expressions in scope that are missing from the payload are archived, never deleted. A week sync only archives within its week.
+- `mode: "all"` syncs the whole bank, and `unit` is omitted or null. `mode: "unit"` syncs one unit, and every item's `unit` must equal it. `unit` and `position` are positive integers.
+- An existing expression is overwritten when its `content_hash`, `unit` or `position` changes, so a move or reorder keeps every user's progress.
+- Expressions in scope that are missing from the payload are archived, never deleted. A unit sync only archives within its unit.
+- Any other `version` gets `422` with `unsupported payload version N, expected 4`.
 - The whole sync is one transaction. Sending the same payload again changes nothing.
-- Responses: `200` with `{ mode, week, added, updated, unarchived, unchanged, archived, total_active }`, `401` for a bad token, `422` with `{ error }` for an invalid payload, `500` if the database write fails (nothing is persisted).
+- Responses: `200` with `{ mode, unit, added, updated, unarchived, unchanged, archived, total_active }`, `401` for a bad token, `422` with `{ error }` for an invalid payload, `500` if the database write fails (nothing is persisted).
 - When a sync adds or archives expressions, the admin receives a Telegram message. A failed message does not fail the sync.

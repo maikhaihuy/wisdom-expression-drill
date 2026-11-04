@@ -49,16 +49,28 @@ describe("planBatches and createBatch", () => {
     expect(plan.sessionId).toBe(`b-5-${T0}`);
   });
 
-  it("prefers the newest week for new items", async () => {
+  it("new items in course order: unit 1 positions 7–9 before any unit-2 item", async () => {
+    const user = await addUser(5);
+    // Inserted out of order on purpose; unit 1 positions 1–6 are already learned.
+    const unit2 = Array.from({ length: 5 }, (_, i) => ({ id: `u2-p${i + 1}`, unit: 2, position: i + 1 }));
+    const unit1 = Array.from({ length: 10 }, (_, i) => ({ id: `u1-p${String(i + 1).padStart(2, "0")}`, unit: 1, position: i + 1 }));
+    await addExpressions([...unit2, ...unit1.reverse()]);
+    for (let p = 1; p <= 6; p++) await setState(5, `u1-p${String(p).padStart(2, "0")}`, { due_at: T0 + DAY });
+
+    const plan = (await planBatches(env.DB, [user], T0, { ...cfg(), newPerBatch: 3, batchMin: 0 }, deps.rng)).get(5)!;
+    expect(plan.items.filter((i) => i.isNew).map((i) => i.id).sort()).toEqual(["u1-p07", "u1-p08", "u1-p09"]);
+  });
+
+  it("orders by position, not insertion order, inside a unit", async () => {
     const user = await addUser(5);
     await addExpressions([
-      { id: "old", week: "2026-W40" },
-      { id: "new1", week: "2026-W44" },
-      { id: "mid", week: "2026-W42" },
-      { id: "new2", week: "2026-W44" },
+      { id: "z-first", unit: 4, position: 1 },
+      { id: "a-third", unit: 4, position: 3 },
+      { id: "m-second", unit: 4, position: 2 },
+      { id: "b-unit5", unit: 5, position: 1 },
     ]);
     const plan = (await planBatches(env.DB, [user], T0, { ...cfg(), newPerBatch: 2, batchMin: 0 }, deps.rng)).get(5)!;
-    expect(plan.items.map((i) => i.id).sort()).toEqual(["new1", "new2"]);
+    expect(plan.items.map((i) => i.id).sort()).toEqual(["m-second", "z-first"]);
   });
 
   it("closes the previous open batch as skip, creates the session and counts new items", async () => {

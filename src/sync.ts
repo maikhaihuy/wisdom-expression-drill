@@ -3,7 +3,7 @@ import type { Env } from "./index";
 import { sendMessage } from "./telegram";
 import { safeEqual } from "./util";
 
-export type SyncMode = "all" | "week";
+export type SyncMode = "all" | "unit";
 
 export interface SyncItem {
   id: string;
@@ -12,19 +12,20 @@ export interface SyncItem {
   examples: string[];
   note: string | null;
   tags: string[];
-  added_week: string;
+  unit: number; // course unit, >= 1
+  position: number; // 1-based order inside the unit
   content_hash: string;
 }
 
 export interface SyncPayload {
   mode: SyncMode;
-  week: string | null;
+  unit: number | null;
   items: SyncItem[];
 }
 
 export interface SyncReport {
   mode: SyncMode;
-  week: string | null;
+  unit: number | null;
   added: number;
   updated: number;
   unarchived: number;
@@ -33,7 +34,7 @@ export interface SyncReport {
   total_active: number;
 }
 
-const WEEK_RE = /^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/;
+export const PAYLOAD_VERSION = 4;
 
 // ---------- Auth ----------
 
@@ -48,21 +49,23 @@ export type Validation = { ok: true; payload: SyncPayload } | { ok: false; reaso
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isNonEmptyString = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
 const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === "string");
+const isPositiveInt = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 1;
 
 export function validatePayload(body: unknown): Validation {
   if (!isObject(body)) return { ok: false, reason: "payload must be a JSON object" };
-  if (body.version !== 3) return { ok: false, reason: `unsupported version: ${JSON.stringify(body.version)}` };
-  if (body.mode !== "all" && body.mode !== "week") return { ok: false, reason: `invalid mode: ${JSON.stringify(body.mode)}` };
+  // Checked first, so an old vault gets a clear message.
+  if (body.version !== PAYLOAD_VERSION) {
+    return { ok: false, reason: `unsupported payload version ${JSON.stringify(body.version)}, expected ${PAYLOAD_VERSION}` };
+  }
+  if (body.mode !== "all" && body.mode !== "unit") return { ok: false, reason: `invalid mode: ${JSON.stringify(body.mode)}` };
 
   const mode = body.mode;
-  let week: string | null = null;
-  if (mode === "week") {
-    if (typeof body.week !== "string" || !WEEK_RE.test(body.week)) {
-      return { ok: false, reason: `invalid week: ${JSON.stringify(body.week)}` };
-    }
-    week = body.week;
-  } else if (body.week !== undefined && body.week !== null) {
-    return { ok: false, reason: "week must be omitted or null in mode all" };
+  let unit: number | null = null;
+  if (mode === "unit") {
+    if (!isPositiveInt(body.unit)) return { ok: false, reason: `invalid unit: ${JSON.stringify(body.unit)}` };
+    unit = body.unit;
+  } else if (body.unit !== undefined && body.unit !== null) {
+    return { ok: false, reason: "unit must be omitted or null in mode all" };
   }
 
   if (!Array.isArray(body.items) || body.items.length === 0) return { ok: false, reason: "items must be a non-empty array" };
@@ -75,11 +78,10 @@ export function validatePayload(body: unknown): Validation {
     for (const field of ["id", "en", "cue", "content_hash"] as const) {
       if (!isNonEmptyString(raw[field])) return { ok: false, reason: `${label}: missing ${field}` };
     }
-    if (typeof raw.added_week !== "string" || !WEEK_RE.test(raw.added_week)) {
-      return { ok: false, reason: `${label}: invalid added_week ${JSON.stringify(raw.added_week)}` };
-    }
-    if (mode === "week" && raw.added_week !== week) {
-      return { ok: false, reason: `${label}: added_week ${raw.added_week} is outside week ${week}` };
+    if (!isPositiveInt(raw.unit)) return { ok: false, reason: `${label}: invalid unit ${JSON.stringify(raw.unit)}` };
+    if (!isPositiveInt(raw.position)) return { ok: false, reason: `${label}: invalid position ${JSON.stringify(raw.position)}` };
+    if (mode === "unit" && raw.unit !== unit) {
+      return { ok: false, reason: `${label}: unit ${raw.unit} is outside unit ${unit}` };
     }
     if (raw.examples !== undefined && !isStringArray(raw.examples)) return { ok: false, reason: `${label}: examples must be an array of strings` };
     if (raw.tags !== undefined && !isStringArray(raw.tags)) return { ok: false, reason: `${label}: tags must be an array of strings` };
@@ -96,12 +98,13 @@ export function validatePayload(body: unknown): Validation {
       examples: (raw.examples as string[] | undefined) ?? [],
       note: (raw.note as string | null | undefined) ?? null,
       tags: (raw.tags as string[] | undefined) ?? [],
-      added_week: raw.added_week,
+      unit: raw.unit,
+      position: raw.position,
       content_hash: raw.content_hash as string,
     });
   }
 
-  return { ok: true, payload: { mode, week, items } };
+  return { ok: true, payload: { mode, unit, items } };
 }
 
 // ---------- Reconciliation (pure) ----------
@@ -120,18 +123,19 @@ export function classifyItems(items: SyncItem[], bank: BankRow[]): Classificatio
     const row = byId.get(item.id);
     if (!row) result.insert.push(item);
     else if (row.archived) result.unarchive.push(item);
-    else if (row.content_hash !== item.content_hash || row.added_week !== item.added_week) result.update.push(item);
+    // A move or reorder is an update, never a re-insert, so review statistics stay.
+    else if (row.content_hash !== item.content_hash || row.unit !== item.unit || row.position !== item.position) result.update.push(item);
     else result.unchanged.push(item);
   }
   return result;
 }
 
 // Active expressions in scope that the payload no longer contains. Scope is decided by
-// the stored added_week, so a week sync never touches other weeks.
-export function computeArchiveSet(mode: SyncMode, week: string | null, items: SyncItem[], bank: BankRow[]): string[] {
+// the stored unit, so a unit sync never touches other units.
+export function computeArchiveSet(mode: SyncMode, unit: number | null, items: SyncItem[], bank: BankRow[]): string[] {
   const payloadIds = new Set(items.map((i) => i.id));
   return bank
-    .filter((row) => !row.archived && (mode === "all" || row.added_week === week) && !payloadIds.has(row.id))
+    .filter((row) => !row.archived && (mode === "all" || row.unit === unit) && !payloadIds.has(row.id))
     .map((row) => row.id);
 }
 
@@ -150,13 +154,13 @@ export async function handleSync(request: Request, env: Env, ctx: ExecutionConte
   }
   const validation = validatePayload(body);
   if (!validation.ok) return Response.json({ error: validation.reason }, { status: 422 });
-  const { mode, week, items } = validation.payload;
+  const { mode, unit, items } = validation.payload;
 
   let report: SyncReport;
   try {
     const bank = await loadBank(env.DB);
     const classes = classifyItems(items, bank);
-    const toArchive = computeArchiveSet(mode, week, items, bank);
+    const toArchive = computeArchiveSet(mode, unit, items, bank);
     const now = Math.floor(Date.now() / 1000);
 
     const statements: D1PreparedStatement[] = [];
@@ -169,7 +173,7 @@ export async function handleSync(request: Request, env: Env, ctx: ExecutionConte
 
     report = {
       mode,
-      week,
+      unit,
       added: classes.insert.length,
       updated: classes.update.length,
       unarchived: classes.unarchive.length,
@@ -188,7 +192,7 @@ export async function handleSync(request: Request, env: Env, ctx: ExecutionConte
 
 async function notifyAdmin(env: Env, r: SyncReport): Promise<void> {
   if (!env.TELEGRAM_BOT_TOKEN || !env.ADMIN_CHAT_ID) return;
-  const scope = r.mode === "week" ? `tuần ${r.week}` : "toàn bộ";
+  const scope = r.mode === "unit" ? `unit ${r.unit}` : "toàn bộ";
   const text =
     `📚 Đồng bộ ngân hàng (${scope})\n` +
     `➕ Thêm mới: ${r.added}\n` +

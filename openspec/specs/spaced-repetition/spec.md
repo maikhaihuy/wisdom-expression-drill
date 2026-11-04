@@ -68,7 +68,7 @@ For ordering, the system SHALL use `miss_rate = (misses + 1) / (hits + misses + 
 - **THEN** its miss_rate is 0.5
 
 ### Requirement: Batch selection
-A batch SHALL contain only active expressions. Due items come first, ordered by miss_rate (descending), then box (ascending), then due time (ascending). New items follow, newest `added_week` first. Selection stops at 10 items. If fewer than 5 items are found, the batch is topped up to 5 with not-yet-due items by highest miss_rate.
+A batch SHALL contain only active expressions. Due items come first, ordered by miss_rate (descending), then box (ascending), then due time (ascending). New items follow in course order: lowest `unit` first, then lowest `position`. Selection stops at 10 items. If fewer than 5 items are found, the batch is topped up to 5 with not-yet-due items by highest miss_rate.
 
 #### Scenario: Many due items
 - **WHEN** a user has 14 due items
@@ -85,6 +85,10 @@ A batch SHALL contain only active expressions. Due items come first, ordered by 
 #### Scenario: Archived expression
 - **WHEN** an expression that is due for the user has been archived
 - **THEN** it is not selected
+
+#### Scenario: New items in course order
+- **WHEN** a user has not seen unit 1 positions 7–9 and all of unit 2, and 3 new items are allowed
+- **THEN** the new items are unit 1 positions 7, 8 and 9
 
 ### Requirement: New-expression limits
 A batch SHALL include at most `NEW_PER_BATCH` (default 3) new expressions. A user SHALL be shown at most `NEW_PER_DAY` (default 20) new expressions per local calendar day, counted when they are sent.
