@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { config } from "../src/config";
 import { t } from "../src/i18n";
 import worker from "../src/index";
-import { createBatch, parseGradeText, planBatches, renderBatch, runSchedule, type BatchPlan } from "../src/review";
+import { batchKeyboard, createBatch, parseGradeText, planBatches, readMarks, renderBatch, runSchedule, toggleKeyboard, type BatchPlan } from "../src/review";
+import type { Result } from "../src/srs";
 import type { InlineKeyboardMarkup } from "../src/telegram";
 import {
   addExpressions,
@@ -170,6 +171,58 @@ describe("renderBatch", () => {
   });
 });
 
+// ---------- Keyboard marks (pure) ----------
+
+describe("readMarks and toggleKeyboard", () => {
+  const drill = { text: t.drillButton, web_app: { url: "https://drill.test/drill/" } };
+  const kb = (marks: (Result | null)[]) => batchKeyboard("b-5-1", marks, [[drill]]);
+
+  it.each([
+    [null, "hit"],
+    ["hit", "miss"],
+    ["miss", null],
+  ] as const)("cycles %s → %s", (from, to) => {
+    const next = toggleKeyboard(kb([null, from, null]), 2)!;
+    expect([...readMarks(next)]).toEqual([
+      [1, null],
+      [2, to],
+      [3, null],
+    ]);
+  });
+
+  it("matches what batchKeyboard renders for any marks", () => {
+    const marks: (Result | null)[] = ["hit", null, "miss", null, "hit", "miss", null, null, "hit", null];
+    expect([...readMarks(kb(marks)).values()]).toEqual(marks);
+    expect(toggleKeyboard(kb(marks), 2)).toEqual(kb(["hit", "hit", "miss", null, "hit", "miss", null, null, "hit", null]));
+  });
+
+  it("handles a 10-item keyboard and leaves every other button intact", () => {
+    const before = kb(Array(10).fill(null));
+    const after = toggleKeyboard(before, 10)!;
+    expect(after.inline_keyboard.map((r) => r.map((b) => b.text))).toEqual([
+      ["1 ·", "2 ·", "3 ·", "4 ·", "5 ·"],
+      ["6 ·", "7 ·", "8 ·", "9 ·", "10 ✓"],
+      [t.allCorrect, t.commit],
+      [t.drillButton],
+    ]);
+    // callback_data never changes, and the commit and drill rows are untouched.
+    expect(after.inline_keyboard.flat().map((b) => b.callback_data)).toEqual(before.inline_keyboard.flat().map((b) => b.callback_data));
+    expect(after.inline_keyboard.slice(2)).toEqual(before.inline_keyboard.slice(2));
+    expect(readMarks(after).get(10)).toBe("hit");
+    expect(readMarks(after).get(1)).toBeNull();
+  });
+
+  it("returns null for an unknown position or a missing keyboard", () => {
+    expect(toggleKeyboard(kb([null, null]), 7)).toBeNull();
+    expect(toggleKeyboard(undefined, 1)).toBeNull();
+    expect(readMarks(undefined).size).toBe(0);
+  });
+
+  it("ignores buttons that are not items", () => {
+    expect([...readMarks({ inline_keyboard: [[{ text: "1 ✓", callback_data: "c:b-5-1" }, drill]] }).keys()]).toEqual([]);
+  });
+});
+
 // ---------- 3.3 Schedule ----------
 
 describe("scheduled batches", () => {
@@ -309,29 +362,81 @@ async function openBatch(n: number, opts: { userId?: number; results?: (string |
 
 const labels = (call: { body: { reply_markup: InlineKeyboardMarkup } }) => call.body.reply_markup.inline_keyboard.flat().map((b) => b.text);
 
+// Acts like the Telegram client: every tap carries the keyboard on screen, and each
+// editMessageReplyMarkup replaces it.
+function phone(tg: ReturnType<typeof mockTelegram>, n: number, extraRows: InlineKeyboardMarkup["inline_keyboard"] = []) {
+  let keyboard = batchKeyboard("b-5-1", Array(n).fill(null), extraRows);
+  return {
+    async tap(data: string, now = T0) {
+      const answer = await send(callback(5, data, { markup: keyboard }), now);
+      const edit = tg.edits().at(-1);
+      if (edit) keyboard = edit.body.reply_markup;
+      return answer;
+    },
+    keyboard: () => keyboard,
+  };
+}
+
 describe("grading with buttons", () => {
-  it("toggle cycles · → ✓ → ✗ → · without touching review state", async () => {
+  it("toggle cycles · → ✓ → ✗ → · from the keyboard alone", async () => {
     await openBatch(3);
     const tg = mockTelegram();
-    await send(callback(5, "t:b-5-1:2"));
-    await send(callback(5, "t:b-5-1:2"));
-    await send(callback(5, "t:b-5-1:2"));
+    const p = phone(tg, 3);
+    for (let i = 0; i < 3; i++) expect(await p.tap("t:b-5-1:2")).toEqual({ method: "answerCallbackQuery", callback_query_id: expect.any(String) });
     expect(tg.edits().map((c) => labels(c).slice(0, 3))).toEqual([
       ["1 ·", "2 ✓", "3 ·"],
       ["1 ·", "2 ✗", "3 ·"],
       ["1 ·", "2 ·", "3 ·"],
     ]);
-    expect(tg.answers()).toHaveLength(3);
+    // Answered in the webhook response, not by a separate Bot API call; nothing in D1.
+    expect(tg.answers()).toHaveLength(0);
+    expect((await itemResults("b-5-1")).map((r) => r.result)).toEqual([null, null, null]);
     expect(await count("card_state")).toBe(0);
+  });
+
+  it("a toggle runs zero D1 queries", async () => {
+    await openBatch(3);
+    const tg = mockTelegram();
+    let queries = 0;
+    const spy = new Proxy(env.DB, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop);
+        if (typeof value !== "function") return value;
+        return (...args: unknown[]) => {
+          queries++;
+          return value.apply(target, args);
+        };
+      },
+    });
+    await send(callback(5, "t:b-5-1:1", { markup: batchKeyboard("b-5-1", [null, null, null]) }), T0, { ...env, DB: spy });
+    expect(queries).toBe(0);
+    expect(tg.edits()).toHaveLength(1);
+  });
+
+  it("ignores \"message is not modified\" on the keyboard edit", async () => {
+    await openBatch(2);
+    const warnings: unknown[] = [];
+    const orig = console.warn;
+    console.warn = (...a: unknown[]) => warnings.push(a);
+    mockTelegram((c) =>
+      c.method === "editMessageReplyMarkup" ? Response.json({ ok: false, description: "Bad Request: message is not modified" }, { status: 400 }) : undefined,
+    );
+    try {
+      expect(await send(callback(5, "t:b-5-1:1", { markup: batchKeyboard("b-5-1", [null, null]) }))).not.toBeNull();
+    } finally {
+      console.warn = orig;
+    }
+    expect(warnings).toHaveLength(0);
   });
 
   it("toggle then commit: item 2 miss, the rest skip, only item 2 changes", async () => {
     await openBatch(5);
     await setState(5, "e04", { box: 3, hits: 2 });
     const tg = mockTelegram();
-    await send(callback(5, "t:b-5-1:2"));
-    await send(callback(5, "t:b-5-1:2"));
-    await send(callback(5, "c:b-5-1"), T0);
+    const p = phone(tg, 5);
+    await p.tap("t:b-5-1:2");
+    await p.tap("t:b-5-1:2");
+    expect(await p.tap("c:b-5-1")).toEqual({ method: "answerCallbackQuery", callback_query_id: expect.any(String) });
 
     expect((await itemResults("b-5-1")).map((r) => r.result)).toEqual(["skip", "miss", "skip", "skip", "skip"]);
     expect((await getSessionRow("b-5-1"))!.closed_at).toBe(T0);
@@ -340,29 +445,39 @@ describe("grading with buttons", () => {
       expect.objectContaining({ expr_id: "e04", box: 3, hits: 2 }),
     ]);
     // Keyboard reduced to nothing, summary sent.
-    expect(tg.edits().at(-1)!.body.reply_markup).toEqual({ inline_keyboard: [] });
+    expect(p.keyboard()).toEqual({ inline_keyboard: [] });
     expect(tg.lastText()).toContain("0/1");
   });
 
   it("all correct keeps explicit misses and marks the rest hit", async () => {
     await openBatch(5);
-    mockTelegram();
-    await send(callback(5, "t:b-5-1:4"));
-    await send(callback(5, "t:b-5-1:4"));
-    await send(callback(5, "a:b-5-1"));
+    const p = phone(mockTelegram(), 5);
+    await p.tap("t:b-5-1:4");
+    await p.tap("t:b-5-1:4");
+    await p.tap("a:b-5-1");
     expect((await itemResults("b-5-1")).map((r) => r.result)).toEqual(["hit", "hit", "hit", "miss", "hit"]);
     expect(await count("card_state", "user_id = 5 AND box = 1 AND hits = 1")).toBe(4);
     expect(await count("card_state", "user_id = 5 AND misses = 1")).toBe(1);
   });
 
-  it("tap on a closed batch gets a notice and changes nothing", async () => {
+  it("commit saves the keyboard's marks, not stale marks stored in D1", async () => {
+    // A batch opened before this change may still hold toggles in session_items.
+    await openBatch(3, { results: ["miss", "hit", null] });
+    const p = phone(mockTelegram(), 3);
+    await p.tap("t:b-5-1:3");
+    await p.tap("c:b-5-1");
+    expect((await itemResults("b-5-1")).map((r) => r.result)).toEqual(["skip", "skip", "hit"]);
+  });
+
+  it("commit on a closed batch gets a notice and changes nothing", async () => {
     await addUser(5);
     await addExpressions(["a"]);
     await addSession("b-5-1", 5, ["a"], { closedAt: T0 - 60, results: ["hit"] });
     const tg = mockTelegram();
-    for (const data of ["t:b-5-1:1", "c:b-5-1", "a:b-5-1"]) await send(callback(5, data));
-    expect(tg.answers().map((c) => c.body.text)).toEqual([t.batchClosed, t.batchClosed, t.batchClosed]);
-    expect(tg.edits()).toHaveLength(0);
+    const p = phone(tg, 1);
+    expect((await p.tap("c:b-5-1"))!.text).toBe(t.batchClosed);
+    expect((await p.tap("a:b-5-1"))!.text).toBe(t.batchClosed);
+    expect(tg.calls).toHaveLength(0);
     expect((await itemResults("b-5-1"))[0].result).toBe("hit");
     expect(await count("card_state")).toBe(0);
   });
@@ -370,30 +485,127 @@ describe("grading with buttons", () => {
   it("double commit applies results once", async () => {
     await openBatch(3);
     const tg = mockTelegram();
-    await Promise.all([send(callback(5, "a:b-5-1")), send(callback(5, "a:b-5-1"))]);
+    const markup = batchKeyboard("b-5-1", [null, null, null]);
+    const answers = await Promise.all([send(callback(5, "a:b-5-1", { markup })), send(callback(5, "a:b-5-1", { markup }))]);
     expect(await count("card_state", "user_id = 5 AND hits = 1 AND box = 1")).toBe(3);
-    const notices = tg.answers().map((c) => c.body.text);
-    expect(notices.filter((x) => x === t.batchClosed)).toHaveLength(1);
+    expect(answers.map((a) => a!.text).filter((x) => x === t.batchClosed)).toHaveLength(1);
     expect(tg.sent()).toHaveLength(1); // one summary
   });
 
   it("keeps the drill button when the keyboard changes", async () => {
     await openBatch(2);
-    const markup: InlineKeyboardMarkup = {
-      inline_keyboard: [[{ text: "1 ·", callback_data: "t:b-5-1:1" }], [{ text: t.drillButton, web_app: { url: "https://drill.test/drill/" } }]],
-    };
+    const drill = [{ text: t.drillButton, web_app: { url: "https://drill.test/drill/" } }];
     const tg = mockTelegram();
-    await send(callback(5, "t:b-5-1:1", { markup }));
-    await send(callback(5, "c:b-5-1", { markup }));
+    const p = phone(tg, 2, [drill]);
+    await p.tap("t:b-5-1:1");
     expect(labels(tg.edits()[0])).toContain(t.drillButton);
-    expect(tg.edits()[1].body.reply_markup.inline_keyboard).toEqual([markup.inline_keyboard[1]]);
+    await p.tap("c:b-5-1");
+    expect(p.keyboard().inline_keyboard).toEqual([drill]);
   });
 
   it("rejects malformed callback data", async () => {
     await openBatch(2);
+    mockTelegram();
+    expect((await send(callback(5, "zzz")))!.text).toBe(t.notYourBatch);
+  });
+
+  it("a newer batch closes the old one as skip and removes its buttons", async () => {
+    await openBatch(3);
+    await setState(5, "e01", { box: 3, hits: 4 });
+    const before = await allStates(5);
     const tg = mockTelegram();
-    await send(callback(5, "zzz"));
-    expect(tg.answers()[0].body.text).toBe(t.notYourBatch);
+    const p = phone(tg, 3);
+    await p.tap("t:b-5-1:1");
+    await p.tap("t:b-5-1:2");
+    await p.tap("t:b-5-1:2");
+
+    await send(msg(5, "/next"), T0 + 60);
+    expect((await getSessionRow("b-5-1"))!.closed_at).toBe(T0 + 60);
+    expect((await itemResults("b-5-1")).map((r) => r.result)).toEqual(["skip", "skip", "skip"]);
+    expect(await allStates(5)).toEqual(before);
+    // The old message (id 77) loses its keyboard, so its stale buttons cannot be tapped.
+    expect(tg.edits().at(-1)!.body).toMatchObject({ message_id: 77, reply_markup: { inline_keyboard: [] } });
+  });
+
+  it("the cron also removes the buttons of the batch it closes", async () => {
+    await openBatch(6);
+    const tg = mockTelegram();
+    await runSchedule(env, T0 + HOUR, deps); // 15:00 local: odd hour, nothing
+    await runSchedule(env, T0 + 2 * HOUR, deps); // 16:00 local
+    expect(tg.edits().map((c) => c.body)).toEqual([expect.objectContaining({ chat_id: 5, message_id: 77, reply_markup: { inline_keyboard: [] } })]);
+  });
+});
+
+describe("webhook answers callbacks in the response body", () => {
+  async function post(update: unknown) {
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(
+      new Request("https://worker.test/tg/webhook", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": env.TELEGRAM_WEBHOOK_SECRET },
+        body: JSON.stringify(update),
+      }),
+      env,
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+    return res;
+  }
+
+  it("a toggle is answered by the response; no separate answerCallbackQuery call", async () => {
+    await openBatch(2);
+    const tg = mockTelegram();
+    const update = callback(5, "t:b-5-1:1", { markup: batchKeyboard("b-5-1", [null, null]) });
+    const res = await post(update);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect(await res.json()).toEqual({ method: "answerCallbackQuery", callback_query_id: update.callback_query!.id });
+    expect(tg.answers()).toHaveLength(0);
+    expect(tg.edits()).toHaveLength(1);
+  });
+
+  it("carries the notice for a closed batch", async () => {
+    await addUser(5);
+    await addExpressions(["a"]);
+    await addSession("b-5-1", 5, ["a"], { closedAt: T0 - 60 });
+    mockTelegram();
+    const res = await post(callback(5, "c:b-5-1"));
+    expect(await res.json()).toMatchObject({ method: "answerCallbackQuery", text: t.batchClosed });
+  });
+
+  it("still answers when handling fails", async () => {
+    await openBatch(2);
+    mockTelegram();
+    const errors: unknown[] = [];
+    const orig = console.error;
+    console.error = (...a: unknown[]) => errors.push(a);
+    await env.DB.exec("DROP TABLE session_items"); // make the commit fail
+    try {
+      const update = callback(5, "c:b-5-1", { markup: batchKeyboard("b-5-1", [null, null]) });
+      const res = await post(update);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ method: "answerCallbackQuery", callback_query_id: update.callback_query!.id });
+    } finally {
+      console.error = orig;
+    }
+    expect(errors).toHaveLength(1);
+  });
+});
+
+describe("text grading removes the batch's buttons", () => {
+  it("removes the item buttons after a text commit", async () => {
+    await openBatch(2);
+    const tg = mockTelegram();
+    await send(msg(5, "ok"));
+    expect(tg.edits().map((c) => c.body)).toEqual([expect.objectContaining({ message_id: 77, reply_markup: { inline_keyboard: [] } })]);
+  });
+
+  it("keeps the drill button on the 20:00 batch when the user has not drilled", async () => {
+    await addUser(5);
+    await addExpressions(["a"]);
+    await addSession("b-5-1", 5, ["a"], { createdAt: T0 + 6 * HOUR }); // 20:00 local
+    const tg = mockTelegram();
+    await send(msg(5, "o"), T0 + 6 * HOUR + 60);
+    expect(tg.edits()[0].body.reply_markup).toEqual({ inline_keyboard: [[{ text: t.drillButton, web_app: { url: "https://drill.test/drill/" } }]] });
   });
 });
 

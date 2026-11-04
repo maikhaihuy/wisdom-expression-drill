@@ -3,9 +3,9 @@ import { t } from "./i18n";
 import type { Env } from "./index";
 import { applyResult, selectBatch, type CardState, type Result } from "./srs";
 import {
-  answerCallbackQuery,
   editMessageReplyMarkup,
   sendMessage,
+  TelegramError,
   UserBlockedError,
   type InlineKeyboardButton,
   type InlineKeyboardMarkup,
@@ -125,16 +125,19 @@ export async function planBatches(
 
 // Records a sent batch: closes the user's open batches (every item becomes skip; marks
 // were never applied), creates the session and its items, and counts new expressions.
-export async function createBatch(db: D1Database, plan: BatchPlan, messageId: number | null, user: User, now: number): Promise<void> {
+// Returns the message ids of the batches it closed, so their buttons can be removed.
+export async function createBatch(db: D1Database, plan: BatchPlan, messageId: number | null, user: User, now: number): Promise<number[]> {
   const today = localDate(now, user.tz_offset_min);
-  await db.batch([
+  const [, closed] = await db.batch<{ message_id: number | null }>([
     db
       .prepare(
         `UPDATE session_items SET result = 'skip', answered_at = NULL WHERE session_id IN
            (SELECT id FROM sessions WHERE user_id = ? AND kind = 'batch' AND closed_at IS NULL)`,
       )
       .bind(plan.userId),
-    db.prepare("UPDATE sessions SET closed_at = ? WHERE user_id = ? AND kind = 'batch' AND closed_at IS NULL").bind(now, plan.userId),
+    db
+      .prepare("UPDATE sessions SET closed_at = ? WHERE user_id = ? AND kind = 'batch' AND closed_at IS NULL RETURNING message_id")
+      .bind(now, plan.userId),
     db
       .prepare("INSERT INTO sessions (id, user_id, kind, message_id, created_at) VALUES (?, ?, 'batch', ?, ?)")
       .bind(plan.sessionId, plan.userId, messageId, now),
@@ -148,6 +151,7 @@ export async function createBatch(db: D1Database, plan: BatchPlan, messageId: nu
       )
       .bind(plan.userId, today, plan.newCount),
   ]);
+  return closed.results.map((r) => r.message_id).filter((id): id is number => id !== null);
 }
 
 // ---------- Rendering ----------
@@ -167,6 +171,41 @@ export function batchKeyboard(sessionId: string, marks: (Result | null)[], extra
   return { inline_keyboard: [...rows, ...extraRows] };
 }
 
+// The open batch's marks live only in its inline keyboard: item buttons are labelled
+// `<pos> ·|✓|✗` with callback_data `t:<sid>:<pos>`. These two PURE functions read and
+// cycle them, so a toggle needs no D1 round trip.
+
+const LABEL_MARK: Record<string, Result | null> = { "·": null, "✓": "hit", "✗": "miss" };
+const ITEM_DATA = /^t:[^:]+:(\d+)$/;
+const ITEM_LABEL = /^(\d+) (·|✓|✗)$/;
+
+export function readMarks(keyboard: InlineKeyboardMarkup | undefined): Map<number, Result | null> {
+  const marks = new Map<number, Result | null>();
+  for (const button of keyboard?.inline_keyboard.flat() ?? []) {
+    const pos = ITEM_DATA.exec(button.callback_data ?? "")?.[1];
+    const label = ITEM_LABEL.exec(button.text);
+    if (pos && label) marks.set(Number(pos), LABEL_MARK[label[2]]);
+  }
+  return marks;
+}
+
+const NEXT_MARK: Record<string, string> = { "·": "✓", "✓": "✗", "✗": "·" };
+
+// Cycles item `pos` · → ✓ → ✗ → ·. Every other button, and every callback_data, is kept.
+// Returns null when the keyboard has no such item.
+export function toggleKeyboard(keyboard: InlineKeyboardMarkup | undefined, pos: number): InlineKeyboardMarkup | null {
+  let found = false;
+  const rows = (keyboard?.inline_keyboard ?? []).map((row) =>
+    row.map((button) => {
+      const label = ITEM_LABEL.exec(button.text);
+      if (!label || Number(ITEM_DATA.exec(button.callback_data ?? "")?.[1]) !== pos) return button;
+      found = true;
+      return { ...button, text: `${label[1]} ${NEXT_MARK[label[2]]}` };
+    }),
+  );
+  return found ? { inline_keyboard: rows } : null;
+}
+
 export function drillRow(drillUrl: string): InlineKeyboardButton[] {
   return [{ text: t.drillButton, web_app: { url: drillUrl } }];
 }
@@ -183,7 +222,9 @@ export function renderBatch(plan: BatchPlan, now: number, tzMin: number, drillUr
 async function sendPlan(env: Env, user: User, plan: BatchPlan, now: number, drillUrl: string | null): Promise<void> {
   const msg = renderBatch(plan, now, user.tz_offset_min, drillUrl);
   const sent = await sendMessage(env.TELEGRAM_BOT_TOKEN, user.id, msg.text, { parse_mode: "HTML", reply_markup: msg.reply_markup });
-  await createBatch(env.DB, plan, sent.message_id, user, now);
+  const closed = await createBatch(env.DB, plan, sent.message_id, user, now);
+  // Item taps never read D1, so a closed batch must not keep tappable buttons.
+  for (const messageId of closed) await editKeyboard(env.TELEGRAM_BOT_TOKEN, user.id, messageId, { inline_keyboard: [] });
 }
 
 // Sends a batch right away (/next). Returns false when there is nothing to review.
@@ -243,20 +284,6 @@ async function getMarks(db: D1Database, sessionId: string): Promise<(Result | nu
 }
 
 const OPEN = "EXISTS (SELECT 1 FROM sessions WHERE id = ?1 AND closed_at IS NULL)";
-
-// Cycles unanswered → hit → miss → unanswered. Returns the new marks, or null if the batch is closed.
-export async function toggleMark(db: D1Database, sessionId: string, pos: number): Promise<(Result | null)[] | null> {
-  const [upd, sel] = await db.batch<{ result: Result | null }>([
-    db
-      .prepare(
-        `UPDATE session_items SET result = CASE WHEN result IS NULL THEN 'hit' WHEN result = 'hit' THEN 'miss' ELSE NULL END
-         WHERE session_id = ?1 AND pos = ?2 AND ${OPEN}`,
-      )
-      .bind(sessionId, pos),
-    db.prepare("SELECT result FROM session_items WHERE session_id = ? ORDER BY pos").bind(sessionId),
-  ]);
-  return upd.meta.changes ? sel.results.map((r) => r.result) : null;
-}
 
 export interface CommitSummary {
   hits: number;
@@ -388,64 +415,73 @@ export async function handleGradeText(env: Env, user: User, text: string, now: n
   const results = parseGradeText(text, n);
   if (!results) return t.gradeHelp;
   const summary = await commitBatch(env.DB, session, user, () => results, now);
-  return summary ? renderSummary(summary) : t.noOpenBatch;
+  if (!summary) return t.noOpenBatch;
+  // The item buttons would otherwise stay tappable on a closed batch. Keep the drill
+  // button if the batch was sent with one (20:00, not drilled today).
+  if (session.message_id) {
+    const tz = user.tz_offset_min;
+    const keepDrill = localHour(session.created_at, tz) === 20 && user.last_drill_date !== localDate(now, tz);
+    await editKeyboard(env.TELEGRAM_BOT_TOKEN, user.id, session.message_id, { inline_keyboard: keepDrill ? [drillRow(config(env).drillUrl)] : [] });
+  }
+  return renderSummary(summary);
 }
 
 // ---------- Buttons ----------
-
-const fillUnmarked = (fill: Result) => (marks: (Result | null)[]) => marks.map((m) => m ?? fill);
+// Each handler returns the notice for the callback answer, which index.ts sends in the
+// webhook response, so the button spinner stops without an extra Bot API call.
 
 // Rows without callbacks (the drill web_app button) survive keyboard edits.
 function keptRows(cq: TgCallbackQuery): InlineKeyboardButton[][] {
   return (cq.message?.reply_markup?.inline_keyboard ?? []).filter((row) => row.some((b) => b.web_app));
 }
 
-export async function handleCallback(env: Env, user: User, cq: TgCallbackQuery, now: number): Promise<void> {
-  const token = env.TELEGRAM_BOT_TOKEN;
-  const m = /^([tac]):([^:]+)(?::(\d+))?$/.exec(cq.data ?? "");
-  const session = m ? await getSession(env.DB, m[2]) : null;
-
-  // Isolation: a callback may only act on the caller's own batch.
-  if (!m || !session || session.kind !== "batch" || session.user_id !== user.id) {
-    await answerCallbackQuery(token, cq.id, t.notYourBatch);
-    return;
-  }
-  if (session.closed_at !== null) {
-    await answerCallbackQuery(token, cq.id, t.batchClosed);
-    return;
-  }
-
-  const [, action, , pos] = m;
-  const chatId = cq.message?.chat.id ?? user.id;
-  const messageId = cq.message?.message_id ?? session.message_id;
-
-  if (action === "t") {
-    const marks = pos ? await toggleMark(env.DB, session.id, Number(pos)) : null;
-    if (!marks) {
-      await answerCallbackQuery(token, cq.id, t.batchClosed);
-      return;
-    }
-    await answerCallbackQuery(token, cq.id);
-    if (messageId) await editKeyboard(token, chatId, messageId, batchKeyboard(session.id, marks, keptRows(cq)));
-    return;
-  }
-
-  const summary = await commitBatch(env.DB, session, user, fillUnmarked(action === "a" ? "hit" : "skip"), now);
-  if (!summary) {
-    await answerCallbackQuery(token, cq.id, t.batchClosed);
-    return;
-  }
-  await answerCallbackQuery(token, cq.id);
-  if (messageId) await editKeyboard(token, chatId, messageId, { inline_keyboard: keptRows(cq) });
-  await sendMessage(token, chatId, renderSummary(summary), { parse_mode: "HTML" });
+// `t:<sid>:<pos>`: no D1 at all. The tapped keyboard is the source of truth for open marks,
+// and the edit runs after the answer. Only the chat owner can tap their own message.
+export function handleToggle(env: Env, cq: TgCallbackQuery, ctx: ExecutionContext): string | undefined {
+  const pos = /^t:[^:]+:(\d+)$/.exec(cq.data ?? "")?.[1];
+  const msg = cq.message;
+  const next = pos && msg ? toggleKeyboard(msg.reply_markup, Number(pos)) : null;
+  if (msg && next) ctx.waitUntil(editKeyboard(env.TELEGRAM_BOT_TOKEN, msg.chat.id, msg.message_id, next).catch(logError("toggle edit")));
+  return undefined;
 }
 
-// Keyboard edits are cosmetic; a race ("message is not modified") must not fail the update.
+// `c:<sid>` commits, `a:<sid>` marks the rest correct and commits. The marks come from the
+// keyboard that was tapped, so what is saved is exactly what the user sees.
+export async function handleCommit(env: Env, user: User, cq: TgCallbackQuery, now: number, ctx: ExecutionContext): Promise<string | undefined> {
+  const m = /^([ac]):([^:]+)$/.exec(cq.data ?? "");
+  const session = m ? await getSession(env.DB, m[2]) : null;
+
+  // Isolation: a commit may only act on the caller's own batch.
+  if (!m || !session || session.kind !== "batch" || session.user_id !== user.id) return t.notYourBatch;
+  if (session.closed_at !== null) return t.batchClosed;
+
+  const marks = readMarks(cq.message?.reply_markup);
+  const fill: Result = m[1] === "a" ? "hit" : "skip";
+  const summary = await commitBatch(env.DB, session, user, (stored) => stored.map((_, i) => marks.get(i + 1) ?? fill), now);
+  if (!summary) return t.batchClosed;
+
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const chatId = cq.message?.chat.id ?? user.id;
+  const messageId = cq.message?.message_id ?? session.message_id;
+  ctx.waitUntil(
+    (async () => {
+      if (messageId) await editKeyboard(token, chatId, messageId, { inline_keyboard: keptRows(cq) });
+      await sendMessage(token, chatId, renderSummary(summary), { parse_mode: "HTML" });
+    })().catch(logError("commit summary")),
+  );
+  return undefined;
+}
+
+const logError = (what: string) => (err: unknown) => console.error(`${what} failed`, err);
+
+// Keyboard edits are cosmetic: "message is not modified" (a repeated edit) is expected and
+// ignored, and other failures are logged without failing the update.
 async function editKeyboard(token: string, chatId: number, messageId: number, markup: InlineKeyboardMarkup): Promise<void> {
   try {
     await editMessageReplyMarkup(token, chatId, messageId, markup);
   } catch (err) {
     if (err instanceof UserBlockedError) throw err;
+    if (err instanceof TelegramError && err.description.includes("message is not modified")) return;
     console.warn("editMessageReplyMarkup failed", err);
   }
 }

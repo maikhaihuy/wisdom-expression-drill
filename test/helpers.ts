@@ -1,3 +1,4 @@
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { vi } from "vitest";
 import { handleUpdate } from "../src/bot";
@@ -203,6 +204,11 @@ export function callback(fromId: number, data: string, opts: { messageId?: numbe
   };
 }
 
-export function send(update: TgUpdate, now = T0) {
-  return handleUpdate(env, update, now, deps);
+// Runs one update like the webhook does, waits for its background work, and returns the
+// callback answer (null for messages and ignored updates).
+export async function send(update: TgUpdate, now = T0, withEnv: Cloudflare.Env = env) {
+  const ctx = createExecutionContext();
+  const answer = await handleUpdate(withEnv, update, now, ctx, deps);
+  await waitOnExecutionContext(ctx);
+  return answer;
 }

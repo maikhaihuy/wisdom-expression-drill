@@ -85,6 +85,14 @@ export function editMessageReplyMarkup(
   return call(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: replyMarkup });
 }
 
-export function answerCallbackQuery(token: string, callbackQueryId: string, text?: string): Promise<unknown> {
-  return call(token, "answerCallbackQuery", { callback_query_id: callbackQueryId, ...(text ? { text } : {}) });
+// A webhook response may carry one Bot API call. Callback queries are answered this way,
+// so the button spinner stops as soon as the Worker responds.
+export interface CallbackAnswer {
+  method: "answerCallbackQuery";
+  callback_query_id: string;
+  text?: string;
+}
+
+export function callbackAnswer(callbackQueryId: string, text?: string): CallbackAnswer {
+  return { method: "answerCallbackQuery", callback_query_id: callbackQueryId, ...(text ? { text } : {}) };
 }

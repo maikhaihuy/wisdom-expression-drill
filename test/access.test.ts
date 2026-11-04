@@ -209,8 +209,8 @@ describe("unregistered and inactive users", () => {
 
   it("callback from an unregistered user gets a notice", async () => {
     const tg = mockTelegram();
-    await send(callback(9, "c:b-5-1"));
-    expect(tg.answers()[0].body.text).toBe(t.registerFirstPlain);
+    expect((await send(callback(9, "c:b-5-1")))!.text).toBe(t.registerFirstPlain);
+    expect(tg.calls).toHaveLength(0);
   });
 });
 
@@ -218,7 +218,6 @@ describe("unregistered and inactive users", () => {
 
 describe("per-user isolation", () => {
   it.each([
-    ["toggle", "t:b-6-1:1"],
     ["commit", "c:b-6-1"],
     ["all correct", "a:b-6-1"],
   ])("user A cannot %s user B's batch", async (_name, data) => {
@@ -228,9 +227,24 @@ describe("per-user isolation", () => {
     await addSession("b-6-1", 6, ["a", "b"], { results: ["hit", null] });
 
     const tg = mockTelegram();
-    await send(callback(5, data));
-    expect(tg.answers()[0].body.text).toBe(t.notYourBatch);
-    expect(tg.edits()).toHaveLength(0);
+    expect((await send(callback(5, data)))!.text).toBe(t.notYourBatch);
+    expect(tg.calls).toHaveLength(0);
+    expect((await getSessionRow("b-6-1"))!.closed_at).toBeNull();
+    expect((await itemResults("b-6-1")).map((r) => r.result)).toEqual(["hit", null]);
+    expect(await count("card_state")).toBe(0);
+  });
+
+  it("a toggle naming another user's session cannot touch their data", async () => {
+    // Toggles never read D1; at most they edit the keyboard of the caller's own message.
+    await addUser(5);
+    await addUser(6);
+    await addExpressions(["a", "b"]);
+    await addSession("b-6-1", 6, ["a", "b"], { results: ["hit", null] });
+    const markup = { inline_keyboard: [[{ text: "1 ·", callback_data: "t:b-6-1:1" }]] };
+
+    const tg = mockTelegram();
+    await send(callback(5, "t:b-6-1:1", { markup }));
+    expect(tg.edits().map((c) => c.body.chat_id)).toEqual([5]);
     expect((await getSessionRow("b-6-1"))!.closed_at).toBeNull();
     expect((await itemResults("b-6-1")).map((r) => r.result)).toEqual(["hit", null]);
     expect(await count("card_state")).toBe(0);

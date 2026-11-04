@@ -114,19 +114,19 @@ Run it again whenever the command list in `src/i18n.ts` changes. The scripts nee
 The cron runs every hour (`0 * * * *`). Each run sends one batch to every active, unpaused user whose local time is an even hour from 08:00 to 22:00. Local time comes from each user's `/tz`, which defaults to `DEFAULT_TZ_OFFSET_MIN` (UTC+7).
 
 - A batch has 5–10 expressions. Due items come first, hardest first; then new items (at most 3 per batch and 20 per day); then items that aren't due yet, to reach 5. The previous batch's items are left out when possible.
-- Sending a new batch closes the previous one, and its unanswered items count as skipped.
+- Sending a new batch closes the previous one: all of its items count as skipped, including marks that were never committed, and its buttons are removed.
 - When the user has not drilled today, the 20:00 batch also has a button that opens the drill Mini App.
 - Leitner boxes 1–6 set the next review: 4 h, 1 d, 3 d, 7 d, 16 d, 35 d. A miss sends an item back to box 1. Due times that would fall between 22:00 and 08:00 move to 08:00.
 
 The batch sizes and new-item limits are the `BATCH_MIN`, `BATCH_MAX`, `NEW_PER_BATCH` and `NEW_PER_DAY` vars in `wrangler.toml`.
 
-On the free plan, one cron run uses 2 D1 queries plus 1 per user who gets a batch, and 1 Telegram call per user. Both are capped at 50 per run, so one hour can serve about 45 users. Above that, move the sends to a Queue.
+On the free plan, one cron run uses 2 D1 queries plus 1 per user who gets a batch, and 1 Telegram call per user, plus 1 more to remove the buttons when that user left the previous batch ungraded. Both are capped at 50 per run, so one hour can serve about 45 users who grade their batches, and about 25 who don't. Above that, move the sends to a Queue.
 
 ### Grading
 
 Each batch message shows numbered cues, with the expression hidden in a spoiler. Say each expression out loud, then grade the batch in one of two ways:
 
-- **Buttons:** tap a number to cycle it through `·` (unanswered), `✓` and `✗`. **Chốt** commits, and unmarked items count as skipped. **Đúng hết** marks every unmarked item correct and commits.
+- **Buttons:** tap a number to cycle it through `·` (unanswered), `✓` and `✗`. **Chốt** commits, and unmarked items count as skipped. **Đúng hết** marks every unmarked item correct and commits. Marks live only in the message's keyboard until you commit, so a tap needs no database call and answers at once; the commit saves exactly what the keyboard shows.
 - **Text reply:** the reply grades the latest open batch.
 
 | Text | Meaning |

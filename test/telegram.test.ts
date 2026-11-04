@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerCallbackQuery, editMessageReplyMarkup, sendMessage, TelegramError, UserBlockedError } from "../src/telegram";
+import { callbackAnswer, editMessageReplyMarkup, sendMessage, TelegramError, UserBlockedError } from "../src/telegram";
 import { forbidden, mockTelegram } from "./helpers";
 
 describe("telegram client", () => {
@@ -30,14 +30,14 @@ describe("telegram client", () => {
     await expect(sendMessage("tok", 42, "hi")).rejects.toBeInstanceOf(TelegramError);
   });
 
-  it("editMessageReplyMarkup and answerCallbackQuery send the right fields", async () => {
+  it("editMessageReplyMarkup sends the right fields", async () => {
     const tg = mockTelegram();
     await editMessageReplyMarkup("tok", 42, 7, { inline_keyboard: [[{ text: "x", callback_data: "y" }]] });
-    await answerCallbackQuery("tok", "cb1", "notice");
-    await answerCallbackQuery("tok", "cb2");
-    expect(tg.calls.map((c) => c.method)).toEqual(["editMessageReplyMarkup", "answerCallbackQuery", "answerCallbackQuery"]);
-    expect(tg.calls[0].body).toMatchObject({ chat_id: 42, message_id: 7 });
-    expect(tg.calls[1].body).toEqual({ callback_query_id: "cb1", text: "notice" });
-    expect(tg.calls[2].body).toEqual({ callback_query_id: "cb2" });
+    expect(tg.calls[0]).toMatchObject({ method: "editMessageReplyMarkup", body: { chat_id: 42, message_id: 7 } });
+  });
+
+  it("callbackAnswer builds a webhook-reply body", () => {
+    expect(callbackAnswer("cb1", "notice")).toEqual({ method: "answerCallbackQuery", callback_query_id: "cb1", text: "notice" });
+    expect(callbackAnswer("cb2")).toEqual({ method: "answerCallbackQuery", callback_query_id: "cb2" });
   });
 });

@@ -2,7 +2,7 @@ import { handleUpdate } from "./bot";
 import { handleDrillApi } from "./drill-api";
 import { runSchedule } from "./review";
 import { handleSync } from "./sync";
-import type { TgUpdate } from "./telegram";
+import { callbackAnswer, type TgUpdate } from "./telegram";
 import { safeEqual } from "./util";
 
 export interface Env {
@@ -38,9 +38,23 @@ export default {
       }
       const update = (await request.json().catch(() => null)) as TgUpdate | null;
       if (!update) return new Response("Bad Request", { status: 400 });
-      // Acknowledge at once; Telegram retries slow webhooks.
       const now = Math.floor(Date.now() / 1000);
-      ctx.waitUntil(handleUpdate(env, update, now).catch((err) => console.error("update failed", update.update_id, err)));
+      const failed = (err: unknown) => console.error("update failed", update.update_id, err);
+
+      // Callbacks are answered in the response body, which stops the button spinner without
+      // another Bot API call; slower follow-up work runs in waitUntil inside the handlers.
+      if (update.callback_query) {
+        const cq = update.callback_query;
+        // Even if handling fails, answer so the spinner stops.
+        const answer = await handleUpdate(env, update, now, ctx).catch((err) => {
+          failed(err);
+          return callbackAnswer(cq.id);
+        });
+        return answer ? Response.json(answer) : new Response("ok");
+      }
+
+      // Messages: acknowledge at once (Telegram retries slow webhooks) and reply in the background.
+      ctx.waitUntil(handleUpdate(env, update, now, ctx).catch(failed));
       return new Response("ok");
     }
 
