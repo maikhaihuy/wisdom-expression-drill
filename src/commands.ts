@@ -24,8 +24,12 @@ export async function handleCommand(env: Env, user: User, cmd: string, arg: stri
       return (await deliverBatch(env, user, now, deps.rng)) ? null : { text: t.emptyBank };
 
     case "drill": {
+      const unit = parseUnitArg(arg);
+      if (unit === undefined) return { text: t.drillUsage };
       const cfg = config(env);
-      return { text: t.drillOpen(Math.round(cfg.drillSeconds / 60), cfg.cardSeconds), reply_markup: { inline_keyboard: [drillRow(cfg.drillUrl)] } };
+      const minutes = Math.round(cfg.drillSeconds / 60);
+      if (unit === null) return { text: t.drillOpen(minutes, cfg.cardSeconds), reply_markup: { inline_keyboard: [drillRow(cfg.drillUrl)] } };
+      return { text: t.drillUnitOpen(unit, minutes, cfg.cardSeconds), reply_markup: { inline_keyboard: [drillRow(`${cfg.drillUrl}?unit=${unit}`)] } };
     }
 
     case "pause": {
@@ -65,6 +69,15 @@ export async function handleCommand(env: Env, user: User, cmd: string, arg: stri
 }
 
 // ---------- Argument parsing (pure) ----------
+
+// '' → all units (null), a positive integer → that unit, anything else → undefined.
+export function parseUnitArg(arg: string): number | null | undefined {
+  const s = arg.trim();
+  if (!s) return null;
+  if (!/^\d{1,4}$/.test(s)) return undefined;
+  const n = Number(s);
+  return n >= 1 ? n : undefined;
+}
 
 // '3h' or '2d', from 1 hour to 30 days. Returns seconds.
 export function parsePause(arg: string): number | null {

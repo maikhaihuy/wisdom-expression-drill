@@ -119,6 +119,109 @@ button:active {
   transform: scale(0.97);
 }
 
+button.link {
+  background: none;
+  color: var(--accent);
+  padding: 8px 12px;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+button:disabled:active {
+  transform: none;
+}
+
+.unit-tag {
+  margin: 0;
+  align-self: center;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.unit-tag[hidden] {
+  display: none;
+}
+
+/* ---------- picker ---------- */
+
+.picker-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.picker {
+  flex: 1;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.picker button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 14px 16px;
+  background: var(--bg2);
+  color: var(--text);
+  text-align: left;
+}
+
+.picker .title {
+  font-weight: 600;
+}
+
+.picker .count {
+  font-variant-numeric: tabular-nums;
+  color: var(--hint);
+  font-size: 15px;
+}
+
+.picker .sub {
+  grid-column: 1 / -1;
+  color: var(--hint);
+  font-size: 14px;
+}
+
+.picker .bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--hint) 25%, transparent);
+  overflow: hidden;
+}
+
+.picker .bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.picker .all {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.picker .all .sub {
+  color: color-mix(in srgb, var(--accent-text) 80%, transparent);
+}
+
+.picker button:disabled {
+  opacity: 0.45;
+}
+
 /* ---------- loading ---------- */
 
 .spinner {
@@ -334,6 +437,10 @@ button:active {
 #sum-missed li span {
   color: var(--hint);
   font-size: 15px;
+}
+
+#screen-summary .unit-tag {
+  align-self: flex-start;
 }
 
 #screen-summary .primary {
