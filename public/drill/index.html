@@ -14,6 +14,7 @@
         <p id="message-icon" class="icon" aria-hidden="true">💬</p>
         <p id="message-text" class="message"></p>
         <button id="message-action" class="primary" type="button" hidden></button>
+        <button id="message-alt" class="link" type="button" hidden></button>
       </section>
 
       <section id="screen-loading" class="screen center">
@@ -31,12 +32,16 @@
 
       <section id="screen-start" class="screen center" hidden>
         <p class="icon" aria-hidden="true">⚡</p>
-        <p id="start-unit" class="unit-tag" hidden></p>
+        <div class="tags">
+          <p id="start-unit" class="unit-tag" hidden></p>
+          <p id="start-practice" class="unit-tag practice-tag" hidden>Luyện thử · không lưu</p>
+        </div>
         <h1>Luyện phản xạ</h1>
         <p id="start-meta" class="lead"></p>
         <p class="hint">Đọc gợi ý, nói to cụm tiếng Anh, rồi chạm để xem đáp án và tự chấm.</p>
         <p class="hint small">Vuốt phải hoặc bấm ✓ Đúng · vuốt trái hoặc bấm ✗ Sai</p>
         <button id="start-btn" class="primary" type="button">Bắt đầu</button>
+        <button id="start-practice-link" class="link" type="button" hidden></button>
         <button id="start-back" class="link" type="button" hidden>Chọn phạm vi khác</button>
       </section>
 
@@ -68,7 +73,10 @@
 
       <section id="screen-summary" class="screen" hidden>
         <h1>Xong rồi! 🎉</h1>
-        <p id="sum-unit" class="unit-tag" hidden></p>
+        <div class="tags">
+          <p id="sum-unit" class="unit-tag" hidden></p>
+          <p id="sum-practice" class="unit-tag practice-tag" hidden>Luyện thử · không lưu</p>
+        </div>
         <div class="stats">
           <div><strong id="sum-cards">0</strong><span>thẻ</span></div>
           <div><strong id="sum-accuracy">–</strong><span>đúng ngay</span></div>

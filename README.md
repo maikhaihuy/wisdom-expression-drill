@@ -159,9 +159,10 @@ Any other command replies with the command list.
 
 A timed, self-graded drill of at most 5 minutes that runs inside Telegram. It ends when the time is up or when no cards are left, whichever comes first. Each card shows only the cue with a countdown (`CARD_SECONDS`, 10 seconds). Tap to reveal the expression early; if the time runs out, it is revealed with **Sai** pre-selected. Grade each card with ✓ Đúng / ✗ Sai, by swiping right or left, or with → / ← on a desktop keyboard.
 
-- **Scope:** the app opens on a picker. **Tất cả** drills all units. Below it, each course unit shows `learned/total` for the user: units with learned expressions come first, newest unit first, and units with nothing learned follow, greyed out. `/drill N` opens the drill for unit N directly and skips the picker.
+- **Scope:** the app opens on a picker. **Tất cả** drills all units. Below it, each course unit shows `learned/total` for the user: units with learned expressions come first, newest unit first, and units with nothing learned follow, marked **Chưa học · luyện thử**. `/drill N` opens the drill for unit N directly and skips the picker.
 - **Deck (Tất cả):** up to 60 expressions the user has already learned (box 1 or higher). About half are the ones they miss most, 30% are due, and 20% are random from boxes 2–5. A user who has learned nothing yet is asked to practise with batches first.
-- **Deck (unit):** the user's learned expressions (box 1 or higher) from that unit, in random order, up to 60. Unlearned expressions are never included; a unit with nothing learned offers **Chọn unit khác** to go back to the picker.
+- **Deck (unit):** the user's learned expressions (box 1 or higher) from that unit, in random order, up to 60. Unlearned expressions are never included. If a unit has unlearned expressions, its start screen also offers **Luyện thử cả unit**.
+- **Luyện thử (practice):** every active expression of one unit, learned or not, in random order, up to 60. It works like the drill but **saves nothing**: no session, no answers, no review-state change, no new expressions introduced, nothing in `/stats` or `/hard`, no chat message, and it doesn't mark the day as drilled. The summary is shown only in the app, tagged **Luyện thử · không lưu**. Units with nothing learned open practice from the picker; `/drill N` for such a unit offers **Luyện thử unit N** or **Chọn unit khác**.
 - **Missed cards** come back 3–5 cards later until answered correctly. Only the first attempt at each expression counts toward review state. An early correct answer on a card that isn't due yet only adds a hit; it never moves the card to a higher box.
 - **Finishing** sends a summary to the chat: cards, first-try accuracy, median reaction time and the missed expressions. A unit drill's summary names the unit. Only a **Tất cả** drill marks the day as drilled, so the 20:00 batch leaves out the drill button; a unit drill doesn't.
 - **Settings:** `DRILL_SECONDS`, `CARD_SECONDS` and `DRILL_DECK_SIZE` in `wrangler.toml` `[vars]`.
@@ -181,12 +182,13 @@ To remove the button, choose **Remove menu button** in the same menu.
 
 ### API
 
-The Mini App calls four endpoints. Each request carries `X-Init-Data: <Telegram.WebApp.initData>`. The Worker checks its signature against `TELEGRAM_BOT_TOKEN`, rejects data older than 24 hours, and takes the user only from it, never from the request body.
+The Mini App calls five endpoints. Each request carries `X-Init-Data: <Telegram.WebApp.initData>`. The Worker checks its signature against `TELEGRAM_BOT_TOKEN`, rejects data older than 24 hours, and takes the user only from it, never from the request body.
 
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/drill/units` | Returns `{ units: [{ unit, learned, total }] }` for the picker, in picker order. |
-| `POST /api/drill/start` | Creates a drill session and returns the deck. Optional body `{ "unit": N }` scopes it to one unit; no body or `null` drills all units. `401` if the user is not registered, `409` (`no_learned` / `no_learned_in_unit`) if they have learned nothing in scope, `422` for a unit that is not a positive integer. |
+| `POST /api/drill/start` | Creates a drill session and returns the deck. Optional body `{ "unit": N }` scopes it to one unit and adds `unitTotal` (active expressions in the unit) to the response; no body or `null` drills all units. `401` if the user is not registered, `409` (`no_learned` / `no_learned_in_unit`) if they have learned nothing in scope, `422` for a unit that is not a positive integer. |
+| `POST /api/drill/practice` | Body `{ "unit": N }`. Returns the practice deck for unit N. Read-only: it creates no session and writes nothing. `409 empty_unit` if the unit has no active expressions, `422 invalid_unit` for a missing or invalid unit. |
 | `POST /api/drill/answers` | Stores up to 100 answers. A position that is already stored is ignored, so retries are safe. |
 | `POST /api/drill/finish` | Closes the session and returns the summary, including `unit` (`null` for all units). Calling it again returns the same summary without a second chat message. |
 

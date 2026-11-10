@@ -19,14 +19,16 @@
     for (const s of screens) $(`screen-${s}`).hidden = s !== name;
   }
 
-  function message(icon, text, action) {
+  function message(icon, text, action, alt) {
     $("message-icon").textContent = icon;
     $("message-text").textContent = text;
-    const btn = $("message-action");
-    btn.hidden = !action;
-    if (action) {
-      btn.textContent = action.label;
-      btn.onclick = action.run;
+    for (const [id, a] of [["message-action", action], ["message-alt", alt]]) {
+      const btn = $(id);
+      btn.hidden = !a;
+      if (a) {
+        btn.textContent = a.label;
+        btn.onclick = a.run;
+      }
     }
     show("message");
   }
@@ -68,7 +70,9 @@
 
   // ---------- drill state ----------
 
-  let session = null; // { sessionId, cardSeconds, totalSeconds, cards }
+  let session = null; // { sessionId, unit, unitTotal?, cardSeconds, totalSeconds, cards }; practice has no sessionId
+  let isPractice = false; // practice runs never send answers or call finish
+  const practiceAnswers = []; // graded answers of a practice run, for the local summary
   let queue = []; // cards in display order; missed cards are spliced back in
   let index = 0;
   let pos = 0; // display position of graded cards, including repeats
@@ -146,8 +150,8 @@
           title: `Unit ${u.unit}`,
           count: `${u.learned}/${u.total}`,
           progress: u.total ? u.learned / u.total : 0,
-          sub: ready ? "" : "Chưa học cụm nào",
-          run: ready ? () => start(u.unit) : null,
+          sub: ready ? "" : "Chưa học · luyện thử",
+          run: ready ? () => start(u.unit) : () => practice(u.unit),
         }),
       );
     }
@@ -159,27 +163,54 @@
   function start(unit) {
     loading("Đang chuẩn bị bộ thẻ…");
     api("start", { unit })
-      .then((data) => {
-        session = data;
-        queue = data.cards.slice();
-        $("start-unit").hidden = data.unit == null;
-        $("start-unit").textContent = data.unit == null ? "" : `Unit ${data.unit}`;
-        $("start-meta").textContent = `tối đa ${Math.round(data.totalSeconds / 60)} phút · ${data.cards.length} cụm`;
-        $("start-btn").onclick = begin;
-        $("start-back").hidden = !pickerShown;
-        $("start-back").onclick = () => show("picker");
-        show("start");
-      })
+      .then((data) => showStart(data, false))
       .catch((err) => onStartError(err, unit));
   }
 
+  // Practice: every expression of the unit, nothing is saved.
+  function practice(unit) {
+    loading("Đang chuẩn bị bộ thẻ…");
+    api("practice", { unit })
+      .then((data) => showStart(data, true))
+      .catch((err) => onPracticeError(err, unit));
+  }
+
+  function showStart(data, practiceRun) {
+    session = data;
+    isPractice = practiceRun;
+    queue = data.cards.slice();
+    $("start-unit").hidden = data.unit == null;
+    $("start-unit").textContent = data.unit == null ? "" : `Unit ${data.unit}`;
+    $("start-practice").hidden = !practiceRun;
+    $("start-meta").textContent = `tối đa ${Math.round(data.totalSeconds / 60)} phút · ${data.cards.length} cụm`;
+    $("start-btn").onclick = begin;
+    // A partly learned unit can also be practised as a whole.
+    const link = $("start-practice-link");
+    link.hidden = practiceRun || !(data.unitTotal > data.cards.length);
+    link.textContent = `Luyện thử cả unit (${data.unitTotal} cụm)`;
+    link.onclick = () => practice(data.unit);
+    $("start-back").hidden = !pickerShown;
+    $("start-back").onclick = () => show("picker");
+    show("start");
+  }
+
   function onStartError(err, unit) {
-    if (err.code === "no_learned_in_unit" || err.code === "invalid_unit") {
-      message("📚", `Bạn chưa học cụm nào trong unit ${unit}. Hãy ôn unit này với bot trước (gửi /next), rồi quay lại luyện phản xạ.`, {
-        label: "Chọn unit khác",
-        run: pickScope,
-      });
+    if (err.code === "no_learned_in_unit") {
+      message(
+        "📚",
+        `Bạn chưa học cụm nào trong unit ${unit}. Bạn có thể luyện thử cả unit (không lưu kết quả), hoặc ôn unit này với bot trước (gửi /next).`,
+        { label: `Luyện thử unit ${unit}`, run: () => practice(unit) },
+        { label: "Chọn unit khác", run: pickScope },
+      );
+    } else if (err.code === "invalid_unit") {
+      message("📚", `Không tìm thấy unit ${unit}.`, { label: "Chọn unit khác", run: pickScope });
     } else onLoadError(err, () => start(unit));
+  }
+
+  function onPracticeError(err, unit) {
+    if (err.code === "empty_unit" || err.code === "invalid_unit") {
+      message("📚", `Unit ${unit} chưa có cụm nào.`, { label: "Chọn unit khác", run: pickScope });
+    } else onLoadError(err, () => practice(unit));
   }
 
   function onLoadError(err, retry) {
@@ -252,7 +283,8 @@
     const firstTry = !seen.has(card.exprId);
     seen.add(card.exprId);
     pos += 1;
-    enqueue({ pos, exprId: card.exprId, result, latencyMs, firstTry });
+    if (isPractice) practiceAnswers.push({ result, latencyMs, firstTry, en: card.en, cue: card.cue });
+    else enqueue({ pos, exprId: card.exprId, result, latencyMs, firstTry });
     if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
 
     // A missed card comes back 3–5 cards later until it is answered correctly.
@@ -332,6 +364,10 @@
     state = "finishing";
     clearTimeout(graceTimer);
     cancelAnimationFrame(rafId);
+    if (isPractice) {
+      state = "done";
+      return showSummary({ ...summarizeLocal(practiceAnswers), unit: session.unit, practice: true });
+    }
     loading("Đang lưu kết quả…");
 
     // Keep flushing until every answer is stored (a flush started earlier may still be running).
@@ -355,7 +391,22 @@
     }
   }
 
+  // Same rules as summarizeDrill on the server: first tries only, median of known latencies.
+  function summarizeLocal(answers) {
+    const first = answers.filter((a) => a.firstTry);
+    const hits = first.filter((a) => a.result === "hit").length;
+    const lat = first.map((a) => a.latencyMs).filter((x) => x !== null).sort((a, b) => a - b);
+    const mid = lat.length >> 1;
+    return {
+      cards: first.length,
+      firstTryAccuracy: first.length ? hits / first.length : null,
+      medianLatencyMs: lat.length ? (lat.length % 2 ? lat[mid] : Math.round((lat[mid - 1] + lat[mid]) / 2)) : null,
+      missed: first.filter((a) => a.result === "miss").map((a) => ({ en: a.en, cue: a.cue })),
+    };
+  }
+
   function showSummary(s) {
+    $("sum-practice").hidden = !s.practice;
     $("sum-unit").hidden = s.unit == null;
     $("sum-unit").textContent = s.unit == null ? "" : `Unit ${s.unit}`;
     $("sum-cards").textContent = String(s.cards);

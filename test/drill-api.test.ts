@@ -362,6 +362,18 @@ describe("summarizeDrill", () => {
     expect(summarizeDrill([row("hit", 300), row("hit", null), row("hit", 100), row("hit", 200)]).medianLatencyMs).toBe(200);
   });
 
+  // Mirrors a manual practice run of unit 6 in the Mini App, whose client-side summary
+  // (summarizeLocal in public/drill/app.js) showed 22 cards, 77% and 0,2s.
+  it("matches the Mini App's practice summary for the same answers", () => {
+    const first = Array.from({ length: 22 }, (_, i) => row(i < 5 ? "miss" : "hit", 180 + i * 2));
+    const repeats = Array.from({ length: 5 }, () => row("hit", 150, 0));
+    const s = summarizeDrill([...first, ...repeats]);
+    expect(s.cards).toBe(22);
+    expect(Math.round(s.firstTryAccuracy! * 100)).toBe(77);
+    expect((s.medianLatencyMs! / 1000).toFixed(1)).toBe("0.2");
+    expect(s.missed).toHaveLength(5);
+  });
+
   it("empty drill", () => {
     expect(summarizeDrill([])).toEqual({ cards: 0, firstTryAccuracy: null, medianLatencyMs: null, missed: [] });
   });
@@ -508,5 +520,82 @@ describe("POST /api/drill/finish for a unit", () => {
     await learnedUser(3);
     const sid = (await api("start", undefined)).body.sessionId;
     expect((await api("finish", { sessionId: sid })).body.unit).toBeNull();
+  });
+});
+
+// ---------- Practice ----------
+
+describe("POST /api/drill/practice", () => {
+  const snapshot = async () => {
+    const q = async (sql: string) => (await env.DB.prepare(sql).all()).results;
+    return {
+      sessions: await q("SELECT * FROM sessions ORDER BY id"),
+      items: await q("SELECT * FROM session_items ORDER BY session_id, pos"),
+      states: await q("SELECT * FROM card_state ORDER BY user_id, expr_id"),
+      users: await q("SELECT id, last_drill_date, new_today, new_today_date FROM users ORDER BY id"),
+    };
+  };
+
+  it("unit with nothing learned: all 22 cards, no session, nothing written", async () => {
+    await addUser(5);
+    await unitBank(5, 18, 6);
+    const unit6 = await unitBank(6, 22, 0);
+    const before = await snapshot();
+    const res = await api("practice", { unit: 6 });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ unit: 6, cardSeconds: 10, totalSeconds: 300 });
+    expect(res.body.sessionId).toBeUndefined();
+    expect(deckIds(res.body)).toEqual([...unit6].sort());
+    expect(res.body.cards[0]).toEqual({ exprId: expect.any(String), cue: expect.any(String), en: expect.any(String), example: expect.stringMatching(/^example /) });
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it("partly learned unit: all 18 cards", async () => {
+    await addUser(5);
+    const unit5 = await unitBank(5, 18, 6);
+    expect(deckIds((await api("practice", { unit: 5 })).body)).toEqual([...unit5].sort());
+  });
+
+  it("excludes archived expressions", async () => {
+    await addUser(5);
+    const unit5 = await unitBank(5, 18, 0);
+    await addExpressions([{ id: "old1", unit: 5, archived: 1 }, { id: "old2", unit: 5, archived: 1 }]);
+    expect(deckIds((await api("practice", { unit: 5 })).body)).toEqual([...unit5].sort());
+  });
+
+  it("empty unit → 409", async () => {
+    await addUser(5);
+    await unitBank(1, 3, 0);
+    expect(await api("practice", { unit: 7 })).toEqual({ status: 409, body: { error: "empty_unit" } });
+  });
+
+  it.each([["missing body", undefined], ["no unit", {}], ["null unit", { unit: null }], ["zero", { unit: 0 }], ["string", { unit: "6" }]])(
+    "invalid unit (%s) → 422",
+    async (_name, body) => {
+      await addUser(5);
+      await unitBank(6, 3, 0);
+      expect(await api("practice", body)).toEqual({ status: 422, body: { error: "invalid_unit" } });
+    },
+  );
+
+  it("bad init data → 401", async () => {
+    await addUser(5);
+    await unitBank(6, 3, 0);
+    expect(await api("practice", { unit: 6 }, { initData: "user=%7B%22id%22%3A5%7D&hash=abc" })).toEqual({ status: 401, body: { error: "invalid_init_data" } });
+  });
+});
+
+describe("unitTotal on start", () => {
+  it("unit 5 drill with 6 of 18 learned: 6 cards, unitTotal 18", async () => {
+    await addUser(5);
+    await unitBank(5, 18, 6);
+    const res = await api("start", { unit: 5 });
+    expect(res.body.cards).toHaveLength(6);
+    expect(res.body.unitTotal).toBe(18);
+  });
+
+  it("absent for the all-units drill", async () => {
+    await learnedUser(3);
+    expect((await api("start", undefined)).body).not.toHaveProperty("unitTotal");
   });
 });

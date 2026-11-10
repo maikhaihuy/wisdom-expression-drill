@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyResult, missRate, nextDue, orderUnits, selectBatch, selectDrillDeck, selectUnitDeck, type Candidate, type CardState } from "../src/srs";
+import { applyResult, missRate, nextDue, orderUnits, selectBatch, selectDrillDeck, selectPracticeDeck, selectUnitDeck, type Candidate, type CardState } from "../src/srs";
 
 const TZ = 420; // UTC+7
 const H = 3600;
@@ -294,5 +294,31 @@ describe("orderUnits", () => {
   it("untouched units stay in course order after the started ones", () => {
     const units = [8, 2, 7, 1].map((unit) => ({ unit, learned: unit === 2 ? 3 : 0, total: 10 }));
     expect(orderUnits(units).map((u) => u.unit)).toEqual([2, 1, 7, 8]);
+  });
+});
+
+describe("selectPracticeDeck", () => {
+  const seeded = (seed: number) => () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+
+  it("includes learned and box-0 cards alike", () => {
+    const cards = [...many("l", 6, () => ({ box: 2 })), ...many("n", 12, () => ({ box: 0 }))];
+    expect(idsOf(selectPracticeDeck(cards, 60, seeded(1)))).toEqual(idsOf(cards));
+  });
+
+  it("caps at size", () => {
+    const deck = selectPracticeDeck(many("u", 30), 10, seeded(2));
+    expect(deck).toHaveLength(10);
+    expect(new Set(deck.map((c) => c.id)).size).toBe(10);
+  });
+
+  it("is shuffled and deterministic under a fixed rng", () => {
+    const cards = many("u", 20);
+    const deck = selectPracticeDeck(cards, 60, seeded(3));
+    expect(deck).toEqual(selectPracticeDeck(cards, 60, seeded(3)));
+    expect(deck.map((c) => c.id)).not.toEqual(cards.map((c) => c.id));
+  });
+
+  it("empty input: empty deck", () => {
+    expect(selectPracticeDeck([], 60, seeded(4))).toEqual([]);
   });
 });

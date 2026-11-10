@@ -174,3 +174,8 @@ export function orderUnits(units: UnitCount[]): UnitCount[] {
   const untouched = units.filter((u) => u.learned <= 0).sort((a, b) => a.unit - b.unit);
   return [...started, ...untouched];
 }
+
+// Practice deck: every active card of one unit, learned or not, shuffled, capped at `size`.
+export function selectPracticeDeck<T>(cards: T[], size: number, rng: () => number): T[] {
+  return shuffle(cards, rng).slice(0, size);
+}

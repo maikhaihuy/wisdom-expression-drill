@@ -1,11 +1,11 @@
-// Reflex drill API for the Mini App: POST /api/drill/{units,start,answers,finish}.
+// Reflex drill API for the Mini App: POST /api/drill/{units,start,practice,answers,finish}.
 // Identity comes only from the X-Init-Data header; body user ids are never read.
 
 import { config } from "./config";
 import { t } from "./i18n";
 import type { Env } from "./index";
 import { authenticate } from "./initdata";
-import { applyResult, orderUnits, selectDrillDeck, selectUnitDeck, type CardState, type UnitCount } from "./srs";
+import { applyResult, orderUnits, selectDrillDeck, selectPracticeDeck, selectUnitDeck, type CardState, type UnitCount } from "./srs";
 import { sendMessage, UserBlockedError } from "./telegram";
 import { localDate } from "./time";
 import { deactivate, type User } from "./users";
@@ -21,7 +21,7 @@ const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 export async function handleDrillApi(request: Request, env: Env, ctx: ExecutionContext, now = Math.floor(Date.now() / 1000)): Promise<Response> {
   const action = new URL(request.url).pathname.replace(/^\/api\/drill\//, "");
-  if (!["units", "start", "answers", "finish"].includes(action)) return json({ error: "not_found" }, 404);
+  if (!["units", "start", "practice", "answers", "finish"].includes(action)) return json({ error: "not_found" }, 404);
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   const auth = await authenticate(env.DB, env.TELEGRAM_BOT_TOKEN, request.headers.get("x-init-data"), now);
@@ -33,6 +33,11 @@ export async function handleDrillApi(request: Request, env: Env, ctx: ExecutionC
     const unit = parseStartUnit(await request.text().catch(() => ""));
     if (unit === undefined) return json({ error: "invalid_unit" }, 422);
     return start(env, user, unit, now);
+  }
+  if (action === "practice") {
+    const unit = parseStartUnit(await request.text().catch(() => ""));
+    if (unit === undefined || unit === null) return json({ error: "invalid_unit" }, 422);
+    return practice(env, unit);
   }
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
@@ -109,15 +114,42 @@ async function start(env: Env, user: User, unit: number | null, now: number): Pr
 
   const suffix = crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
   const sessionId = `d-${user.id}-${now}-${suffix}`;
-  await env.DB.prepare("INSERT INTO sessions (id, user_id, kind, unit, created_at) VALUES (?, ?, 'drill', ?, ?)").bind(sessionId, user.id, unit, now).run();
+  const insert = env.DB.prepare("INSERT INTO sessions (id, user_id, kind, unit, created_at) VALUES (?, ?, 'drill', ?, ?)").bind(sessionId, user.id, unit, now);
+  let unitTotal: number | undefined;
+  if (unit === null) await insert.run();
+  else {
+    const [, total] = await env.DB.batch<{ n: number }>([insert, env.DB.prepare("SELECT COUNT(*) AS n FROM expressions WHERE unit = ? AND archived = 0").bind(unit)]);
+    unitTotal = total.results[0].n;
+  }
 
   return json({
     sessionId,
     unit,
+    ...(unitTotal === undefined ? {} : { unitTotal }),
     cardSeconds: cfg.cardSeconds,
     totalSeconds: cfg.drillSeconds,
-    cards: deck.map((c) => ({ exprId: c.id, cue: c.cue, en: c.en, example: (JSON.parse(c.examples) as string[])[0] ?? null })),
+    cards: deck.map(toCard),
   });
+}
+
+const toCard = (c: { id: string; cue: string; en: string; examples: string }) => ({
+  exprId: c.id,
+  cue: c.cue,
+  en: c.en,
+  example: (JSON.parse(c.examples) as string[])[0] ?? null,
+});
+
+// ---------- practice ----------
+
+// Read-only: no session, so `answers` and `finish` have nothing to attach practice results to.
+async function practice(env: Env, unit: number): Promise<Response> {
+  const cfg = config(env);
+  const { results } = await env.DB.prepare("SELECT id, en, cue, examples FROM expressions WHERE unit = ? AND archived = 0")
+    .bind(unit)
+    .all<{ id: string; en: string; cue: string; examples: string }>();
+  const deck = selectPracticeDeck(results, cfg.drillDeckSize, Math.random);
+  if (!deck.length) return json({ error: "empty_unit" }, 409);
+  return json({ unit, cardSeconds: cfg.cardSeconds, totalSeconds: cfg.drillSeconds, cards: deck.map(toCard) });
 }
 
 // ---------- answers ----------

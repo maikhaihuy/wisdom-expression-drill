@@ -144,8 +144,21 @@ button:disabled:active {
   font-weight: 600;
 }
 
-.unit-tag[hidden] {
+.unit-tag[hidden],
+button[hidden] {
   display: none;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.practice-tag {
+  background: color-mix(in srgb, var(--hint) 18%, transparent);
+  color: var(--hint);
 }
 
 /* ---------- picker ---------- */
@@ -439,8 +452,8 @@ button:disabled:active {
   font-size: 15px;
 }
 
-#screen-summary .unit-tag {
-  align-self: flex-start;
+#screen-summary .tags {
+  justify-content: flex-start;
 }
 
 #screen-summary .primary {
