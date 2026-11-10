@@ -21,13 +21,23 @@
         <p id="loading-text" class="hint">Đang tải…</p>
       </section>
 
+      <section id="screen-picker" class="screen" hidden>
+        <header class="picker-head">
+          <h1>⚡ Luyện phản xạ</h1>
+          <p class="hint">Chọn phạm vi luyện</p>
+        </header>
+        <ul id="picker-list" class="picker"></ul>
+      </section>
+
       <section id="screen-start" class="screen center" hidden>
         <p class="icon" aria-hidden="true">⚡</p>
+        <p id="start-unit" class="unit-tag" hidden></p>
         <h1>Luyện phản xạ</h1>
         <p id="start-meta" class="lead"></p>
         <p class="hint">Đọc gợi ý, nói to cụm tiếng Anh, rồi chạm để xem đáp án và tự chấm.</p>
         <p class="hint small">Vuốt phải hoặc bấm ✓ Đúng · vuốt trái hoặc bấm ✗ Sai</p>
         <button id="start-btn" class="primary" type="button">Bắt đầu</button>
+        <button id="start-back" class="link" type="button" hidden>Chọn phạm vi khác</button>
       </section>
 
       <section id="screen-drill" class="screen" hidden>
@@ -58,6 +68,7 @@
 
       <section id="screen-summary" class="screen" hidden>
         <h1>Xong rồi! 🎉</h1>
+        <p id="sum-unit" class="unit-tag" hidden></p>
         <div class="stats">
           <div><strong id="sum-cards">0</strong><span>thẻ</span></div>
           <div><strong id="sum-accuracy">–</strong><span>đúng ngay</span></div>

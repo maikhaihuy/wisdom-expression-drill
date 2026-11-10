@@ -156,3 +156,21 @@ export function selectDrillDeck<T extends Candidate>(cards: T[], size: number, n
 
   return shuffle(deck, rng);
 }
+
+// Unit drill deck: the user's learned (box >= 1) cards of one unit, shuffled, capped at `size`.
+export function selectUnitDeck<T extends { box: number }>(cards: T[], size: number, rng: () => number): T[] {
+  return shuffle(cards.filter((c) => c.box >= 1), rng).slice(0, size);
+}
+
+export interface UnitCount {
+  unit: number;
+  learned: number;
+  total: number;
+}
+
+// Picker order: units with learned cards, newest unit first; then units with none, in course order.
+export function orderUnits(units: UnitCount[]): UnitCount[] {
+  const started = units.filter((u) => u.learned > 0).sort((a, b) => b.unit - a.unit);
+  const untouched = units.filter((u) => u.learned <= 0).sort((a, b) => a.unit - b.unit);
+  return [...started, ...untouched];
+}

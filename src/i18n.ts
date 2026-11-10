@@ -2,7 +2,7 @@
 
 export const COMMANDS = [
   { command: "next", description: "Ôn ngay một lượt" },
-  { command: "drill", description: "Luyện phản xạ 5 phút" },
+  { command: "drill", description: "Luyện phản xạ 5 phút, ví dụ /drill 4 cho unit 4" },
   { command: "stats", description: "Thống kê của bạn" },
   { command: "hard", description: "Những cụm hay quên nhất" },
   { command: "pause", description: "Tạm dừng nhắc, ví dụ /pause 2d" },
@@ -54,6 +54,9 @@ export const t = {
 
   // ----- commands -----
   drillOpen: (minutes: number, cardSeconds: number) => `Luyện phản xạ: ${minutes} phút, mỗi cụm ${cardSeconds} giây.`,
+  drillUnitOpen: (unit: number, minutes: number, cardSeconds: number) =>
+    `Luyện phản xạ unit ${unit}: tối đa ${minutes} phút, mỗi cụm ${cardSeconds} giây.`,
+  drillUsage: "Cách dùng: <code>/drill</code> để chọn unit, hoặc <code>/drill 4</code> để luyện ngay unit 4.",
   pauseUsage: "Cách dùng: <code>/pause 3h</code> hoặc <code>/pause 2d</code> (từ 1 giờ đến 30 ngày).",
   paused: (until: string) => `Đã tạm dừng nhắc đến ${until}. Gửi /resume để tiếp tục sớm hơn.`,
   resumed: "Đã bật lại nhắc ôn.",
@@ -75,6 +78,7 @@ export const t = {
     `⚡ <b>Luyện phản xạ xong</b>: ${cards} thẻ` +
     (accuracy === null ? "" : ` · đúng ngay ${Math.round(accuracy * 100)}%`) +
     (medianMs === null ? "" : ` · trung vị ${(medianMs / 1000).toFixed(1).replace(".", ",")} giây`),
+  drillUnitHeader: (unit: number) => `📘 <b>Unit ${unit}</b>`,
   hardTitle: "<b>Những cụm hay quên nhất</b>",
   hardEmpty: "Chưa đủ dữ liệu. Cần trả lời mỗi cụm ít nhất 3 lần.",
   membersTitle: "<b>Thành viên</b>",

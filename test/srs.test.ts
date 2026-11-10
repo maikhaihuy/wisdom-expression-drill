@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyResult, missRate, nextDue, selectBatch, selectDrillDeck, type Candidate, type CardState } from "../src/srs";
+import { applyResult, missRate, nextDue, orderUnits, selectBatch, selectDrillDeck, selectUnitDeck, type Candidate, type CardState } from "../src/srs";
 
 const TZ = 420; // UTC+7
 const H = 3600;
@@ -242,5 +242,57 @@ describe("selectDrillDeck", () => {
     const cards = learned(60, (i) => ({ misses: 60 - i }));
     const deck = selectDrillDeck(cards, 60, T, seeded(7));
     expect(deck.map((c) => c.id)).not.toEqual(idsOf(deck));
+  });
+});
+
+// ---------- Unit drill ----------
+
+describe("selectUnitDeck", () => {
+  const seeded = (seed: number) => () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+
+  it("finished unit: every card, shuffled", () => {
+    const cards = many("u", 20, (i) => ({ box: 1 + (i % 6) }));
+    const deck = selectUnitDeck(cards, 60, seeded(1));
+    expect(idsOf(deck)).toEqual(idsOf(cards));
+    expect(deck.map((c) => c.id)).not.toEqual(cards.map((c) => c.id));
+  });
+
+  it("excludes box-0 cards", () => {
+    const cards = [...many("l", 6, () => ({ box: 2 })), ...many("n", 12, () => ({ box: 0 }))];
+    expect(idsOf(selectUnitDeck(cards, 60, seeded(2)))).toEqual(idsOf(cards.slice(0, 6)));
+  });
+
+  it("caps at size", () => {
+    const deck = selectUnitDeck(many("u", 30), 10, seeded(3));
+    expect(deck).toHaveLength(10);
+    expect(new Set(deck.map((c) => c.id)).size).toBe(10);
+  });
+
+  it("is deterministic under a fixed rng", () => {
+    const cards = many("u", 20);
+    expect(selectUnitDeck(cards, 60, seeded(4))).toEqual(selectUnitDeck(cards, 60, seeded(4)));
+  });
+
+  it("empty unit: empty deck", () => {
+    expect(selectUnitDeck(many("n", 5, () => ({ box: 0 })), 60, seeded(5))).toEqual([]);
+  });
+});
+
+describe("orderUnits", () => {
+  it("picker after finishing unit 4", () => {
+    const units = [
+      { unit: 1, learned: 15, total: 15 },
+      { unit: 2, learned: 17, total: 17 },
+      { unit: 3, learned: 19, total: 19 },
+      { unit: 4, learned: 20, total: 20 },
+      { unit: 5, learned: 6, total: 18 },
+      { unit: 6, learned: 0, total: 22 },
+    ];
+    expect(orderUnits(units).map((u) => u.unit)).toEqual([5, 4, 3, 2, 1, 6]);
+  });
+
+  it("untouched units stay in course order after the started ones", () => {
+    const units = [8, 2, 7, 1].map((unit) => ({ unit, learned: unit === 2 ? 3 : 0, total: 10 }));
+    expect(orderUnits(units).map((u) => u.unit)).toEqual([2, 1, 7, 8]);
   });
 });

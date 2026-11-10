@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { computeStreak, formatOffset, parsePause, parseTz } from "../src/commands";
+import { computeStreak, formatOffset, parsePause, parseTz, parseUnitArg } from "../src/commands";
 import { t } from "../src/i18n";
 import { runSchedule } from "../src/review";
 import {
@@ -64,6 +64,39 @@ describe("/drill", () => {
     await send(msg(5, "/drill"));
     expect(tg.sent()[0].body.reply_markup.inline_keyboard).toEqual([[{ text: t.drillButton, web_app: { url: "https://drill.test/drill/" } }]]);
     expect(tg.lastText()).toBe("Luyện phản xạ: 5 phút, mỗi cụm 10 giây.");
+  });
+
+  it("/drill 4 opens the unit 4 drill directly", async () => {
+    await addUser(5);
+    const tg = mockTelegram();
+    await send(msg(5, "/drill 4"));
+    const [[button]] = tg.sent()[0].body.reply_markup.inline_keyboard;
+    expect(button.web_app.url).toBe("https://drill.test/drill/?unit=4");
+    expect(button.web_app.url.endsWith("?unit=4")).toBe(true);
+    expect(tg.lastText()).toBe("Luyện phản xạ unit 4: tối đa 5 phút, mỗi cụm 10 giây.");
+  });
+
+  it.each(["/drill abc", "/drill 0", "/drill -2", "/drill 4 5"])("%s → usage, no button", async (text) => {
+    await addUser(5);
+    const tg = mockTelegram();
+    await send(msg(5, text));
+    expect(tg.sent()[0].body.reply_markup).toBeUndefined();
+    expect(tg.lastText()).toBe(t.drillUsage);
+  });
+});
+
+describe("parseUnitArg", () => {
+  it.each([
+    ["", null],
+    ["  ", null],
+    ["4", 4],
+    [" 12 ", 12],
+    ["0", undefined],
+    ["abc", undefined],
+    ["4.5", undefined],
+    ["+4", undefined],
+  ])("%j → %j", (arg, expected) => {
+    expect(parseUnitArg(arg)).toBe(expected);
   });
 });
 

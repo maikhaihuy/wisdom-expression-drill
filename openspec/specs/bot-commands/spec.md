@@ -14,11 +14,19 @@ Defines the slash commands registered users and the admin use to control their p
 - **THEN** the user receives a batch and any previous open batch is closed
 
 ### Requirement: Open drill
-`/drill` SHALL reply with a button that opens the reflex drill Mini App.
+`/drill` SHALL reply with a button that opens the reflex drill Mini App. `/drill N`, where N is a positive integer, SHALL reply with a button that opens the drill for unit N directly. Any other argument SHALL get a usage reply without a button.
 
 #### Scenario: Drill button
 - **WHEN** a user sends `/drill`
 - **THEN** the reply contains a `web_app` button pointing to `/drill/`
+
+#### Scenario: Unit drill button
+- **WHEN** a user sends `/drill 4`
+- **THEN** the reply names unit 4 and contains a `web_app` button pointing to `/drill/` with unit 4 selected
+
+#### Scenario: Invalid unit argument
+- **WHEN** a user sends `/drill abc` or `/drill 0`
+- **THEN** the reply explains the usage and contains no button
 
 ### Requirement: Personal statistics
 `/stats` SHALL show the user's own figures: active bank size, expressions seen, count per box, accuracy over the last 7 days, and the current streak of consecutive local days with at least one graded answer.

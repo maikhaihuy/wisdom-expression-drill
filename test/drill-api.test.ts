@@ -30,7 +30,7 @@ async function learnedUser(n: number, userId = 5) {
   return exprs;
 }
 
-const sessionRow = (id: string) => env.DB.prepare("SELECT * FROM sessions WHERE id = ?").bind(id).first<{ user_id: number; kind: string; closed_at: number | null }>();
+const sessionRow = (id: string) => env.DB.prepare("SELECT * FROM sessions WHERE id = ?").bind(id).first<{ user_id: number; kind: string; unit: number | null; closed_at: number | null }>();
 const items = async (sid: string) =>
   (await env.DB.prepare("SELECT pos, expr_id, result, latency_ms, first_try FROM session_items WHERE session_id = ? ORDER BY pos").bind(sid).all()).results;
 
@@ -372,5 +372,141 @@ describe("summarizeDrill", () => {
       `${t.drillSummary(48, 40 / 48, 2100)}\n\n${t.reviewAgain}\n✗ <b>R&amp;D</b> — a &lt; b`,
     );
     expect(t.drillSummary(48, 40 / 48, 2100)).toBe("⚡ <b>Luyện phản xạ xong</b>: 48 thẻ · đúng ngay 83% · trung vị 2,1 giây");
+  });
+});
+
+// ---------- Unit drill ----------
+
+// Unit u with `total` expressions, the first `learned` of them in box 2 for the user.
+async function unitBank(unit: number, total: number, learned: number, userIds: number[] = [5]) {
+  const exprs = Array.from({ length: total }, (_, i) => `u${unit}-${String(i + 1).padStart(2, "0")}`);
+  await addExpressions(exprs.map((id, i) => ({ id, unit, position: i + 1 })));
+  for (const uid of userIds) for (const id of exprs.slice(0, learned)) await setState(uid, id, { box: 2, due_at: T0 + 2 * DAY, hits: 1 });
+  return exprs;
+}
+const deckIds = (body: { cards: { exprId: string }[] }) => body.cards.map((c) => c.exprId).sort();
+
+describe("POST /api/drill/units", () => {
+  it("picker after finishing unit 4: counts and order", async () => {
+    await addUser(5);
+    for (const [u, n] of [[1, 15], [2, 17], [3, 19], [4, 20]]) await unitBank(u, n, n);
+    await unitBank(5, 18, 6);
+    await unitBank(6, 22, 0);
+    const res = await api("units", undefined);
+    expect(res.status).toBe(200);
+    expect(res.body.units).toEqual([
+      { unit: 5, learned: 6, total: 18 },
+      { unit: 4, learned: 20, total: 20 },
+      { unit: 3, learned: 19, total: 19 },
+      { unit: 2, learned: 17, total: 17 },
+      { unit: 1, learned: 15, total: 15 },
+      { unit: 6, learned: 0, total: 22 },
+    ]);
+  });
+
+  it("counts are per user", async () => {
+    await addUser(5);
+    await addUser(6);
+    const exprs = await unitBank(1, 10, 3, [5]);
+    for (const id of exprs.slice(0, 7)) await setState(6, id, { box: 1 });
+    expect((await api("units", undefined, { userId: 5 })).body.units).toEqual([{ unit: 1, learned: 3, total: 10 }]);
+    expect((await api("units", undefined, { userId: 6 })).body.units).toEqual([{ unit: 1, learned: 7, total: 10 }]);
+  });
+
+  it("excludes archived and unit-0 expressions; box-0 state is not learned", async () => {
+    await addUser(5);
+    await unitBank(2, 4, 2);
+    await addExpressions([{ id: "old", unit: 2, archived: 1 }, { id: "nounit", unit: 0 }, { id: "seen", unit: 2 }]);
+    await setState(5, "old", { box: 3 });
+    await setState(5, "nounit", { box: 3 });
+    await setState(5, "seen", { box: 0 });
+    expect((await api("units", undefined)).body.units).toEqual([{ unit: 2, learned: 2, total: 5 }]);
+  });
+
+  it("bad init data → 401", async () => {
+    await addUser(5);
+    expect(await api("units", undefined, { initData: "user=%7B%22id%22%3A5%7D&hash=abc" })).toEqual({ status: 401, body: { error: "invalid_init_data" } });
+  });
+});
+
+describe("POST /api/drill/start with a unit", () => {
+  it("finished unit: exactly its learned cards, unit stored on the session", async () => {
+    await addUser(5);
+    await unitBank(3, 15, 15);
+    const unit4 = await unitBank(4, 20, 20);
+    const res = await api("start", { unit: 4 });
+    expect(res.status).toBe(200);
+    expect(res.body.unit).toBe(4);
+    expect(deckIds(res.body)).toEqual([...unit4].sort());
+    expect(await sessionRow(res.body.sessionId)).toMatchObject({ kind: "drill", unit: 4, closed_at: null });
+  });
+
+  it("partly learned unit: only the learned cards", async () => {
+    await addUser(5);
+    const unit5 = await unitBank(5, 18, 6);
+    expect(deckIds((await api("start", { unit: 5 })).body)).toEqual(unit5.slice(0, 6).sort());
+  });
+
+  it("nothing learned in the unit → 409 and no session", async () => {
+    await addUser(5);
+    await unitBank(1, 5, 5);
+    await unitBank(6, 22, 0);
+    expect(await api("start", { unit: 6 })).toEqual({ status: 409, body: { error: "no_learned_in_unit" } });
+    expect(await api("start", { unit: 99 })).toEqual({ status: 409, body: { error: "no_learned_in_unit" } });
+    expect(await count("sessions")).toBe(0);
+  });
+
+  it.each([["zero", { unit: 0 }], ["negative", { unit: -1 }], ["fraction", { unit: 1.5 }], ["string", { unit: "4" }], ["not an object", [4]]])(
+    "invalid unit (%s) → 422 and no session",
+    async (_name, body) => {
+      await addUser(5);
+      await unitBank(4, 5, 5);
+      expect(await api("start", body)).toEqual({ status: 422, body: { error: "invalid_unit" } });
+      expect(await count("sessions")).toBe(0);
+    },
+  );
+
+  it("no body, or unit null: the all-units drill", async () => {
+    await addUser(5);
+    await unitBank(1, 3, 3);
+    await unitBank(2, 3, 3);
+    for (const body of [undefined, {}, { unit: null }]) {
+      const res = await api("start", body);
+      expect(res.body.unit).toBeNull();
+      expect(res.body.cards).toHaveLength(6);
+      expect(await sessionRow(res.body.sessionId)).toMatchObject({ unit: null });
+    }
+  });
+});
+
+describe("POST /api/drill/finish for a unit", () => {
+  it("unit 4, 20 cards, 18 first-try → 90%, unit named, last_drill_date unchanged, 20:00 still has the drill button", async () => {
+    await addUser(5);
+    const exprs = await unitBank(4, 20, 20);
+    const tg = mockTelegram();
+    const sid = (await api("start", { unit: 4 })).body.sessionId as string;
+    const answers = exprs.map((id, i) => ({ pos: i + 1, exprId: id, result: i < 18 ? "hit" : "miss", latencyMs: 1000 }));
+    answers.push(...exprs.slice(18).map((id, i) => ({ pos: 21 + i, exprId: id, result: "hit", latencyMs: 500 })));
+    for (let i = 0; i < answers.length; i += 10) await api("answers", { sessionId: sid, answers: answers.slice(i, i + 10) });
+
+    const res = await api("finish", { sessionId: sid });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ unit: 4, cards: 20, firstTryAccuracy: 0.9 });
+    expect(await env.DB.prepare("SELECT last_drill_date FROM users WHERE id = 5").first("last_drill_date")).toBeNull();
+    const text = tg.sent()[0].body.text as string;
+    expect(text.startsWith(t.drillUnitHeader(4))).toBe(true);
+    expect(text).toContain("20 thẻ");
+    expect(text).toContain("90%");
+
+    tg.calls.length = 0;
+    await runSchedule(env, T0 + 6 * HOUR, deps); // 20:00 local
+    const markup = tg.sent()[0].body.reply_markup as InlineKeyboardMarkup;
+    expect(markup.inline_keyboard.some((row) => row.some((b) => b.web_app))).toBe(true);
+  });
+
+  it("an all-units finish returns unit null", async () => {
+    await learnedUser(3);
+    const sid = (await api("start", undefined)).body.sessionId;
+    expect((await api("finish", { sessionId: sid })).body.unit).toBeNull();
   });
 });
