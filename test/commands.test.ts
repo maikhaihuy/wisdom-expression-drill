@@ -111,9 +111,9 @@ describe("/pause and /resume", () => {
 
     tg.calls.length = 0;
     await runSchedule(env, T0 + 2 * HOUR, deps);
-    await runSchedule(env, T0 + 2 * DAY - 2 * HOUR, deps);
+    await runSchedule(env, T0 + 2 * DAY - 2 * HOUR, deps); // 12:00 local, still paused
     expect(tg.sent()).toHaveLength(0);
-    await runSchedule(env, T0 + 2 * DAY, deps);
+    await runSchedule(env, T0 + 2 * DAY + 3 * HOUR, deps); // 17:00 local, pause over
     expect(tg.sent()).toHaveLength(1);
   });
 
@@ -153,10 +153,10 @@ describe("/tz", () => {
     expect(tg.lastText()).toBe(t.tzSet("+9", "16:00 26/10"));
 
     tg.calls.length = 0;
-    await runSchedule(env, Date.UTC(2026, 9, 26, 7) / 1000, deps); // 16:00 UTC+9 → sends
-    await runSchedule(env, Date.UTC(2026, 9, 26, 6) / 1000, deps); // 15:00 UTC+9 → odd hour, nothing
+    await runSchedule(env, Date.UTC(2026, 9, 26, 8) / 1000, deps); // 17:00 UTC+9 → sends
+    await runSchedule(env, Date.UTC(2026, 9, 26, 7) / 1000, deps); // 16:00 UTC+9 → not a batch hour, nothing
     expect(tg.sent()).toHaveLength(1);
-    expect(tg.lastText()).toContain("Ôn 16:00");
+    expect(tg.lastText()).toContain("Ôn 17:00");
   });
 
   it("invalid value shows usage", async () => {

@@ -1,7 +1,7 @@
 import { config, type Config } from "./config";
 import { t } from "./i18n";
 import type { Env } from "./index";
-import { applyResult, selectBatch, type CardState, type Result } from "./srs";
+import { applyResult, selectBatch, type CardState, type QuietWindow, type Result } from "./srs";
 import {
   editMessageReplyMarkup,
   sendMessage,
@@ -243,7 +243,7 @@ export async function runSchedule(env: Env, now: number, deps: Deps = defaultDep
   const { results } = await env.DB.prepare("SELECT * FROM users WHERE active = 1 AND (paused_until IS NULL OR paused_until <= ?)")
     .bind(now)
     .all<User>();
-  const users = results.filter((u) => isBatchHour(now, u.tz_offset_min));
+  const users = results.filter((u) => isBatchHour(now, u.tz_offset_min, cfg.batchHours));
   const plans = await planBatches(env.DB, users, now, cfg, deps.rng);
 
   let sent = 0;
@@ -253,7 +253,7 @@ export async function runSchedule(env: Env, now: number, deps: Deps = defaultDep
     if (sent++ && deps.delayMs) await sleep(deps.delayMs);
     try {
       const tz = user.tz_offset_min;
-      const drill = localHour(now, tz) === 20 && user.last_drill_date !== localDate(now, tz);
+      const drill = localHour(now, tz) === cfg.drillReminderHour && user.last_drill_date !== localDate(now, tz);
       await sendPlan(env, user, plan, now, drill ? cfg.drillUrl : null);
     } catch (err) {
       if (err instanceof UserBlockedError) await deactivate(env.DB, user.id);
@@ -315,6 +315,7 @@ export async function commitBatch(
   user: User,
   resolve: (marks: (Result | null)[]) => Result[],
   now: number,
+  quiet: QuietWindow,
 ): Promise<CommitSummary | null> {
   const { results: rows } = await db
     .prepare(
@@ -338,7 +339,7 @@ export async function commitBatch(
         .bind(session.id, row.pos, r, r === "skip" ? null : now),
     );
     const prev: CardState | null = row.box === null ? null : (row as unknown as CardState);
-    const next = applyResult(prev, r, now, "batch", user.tz_offset_min);
+    const next = applyResult(prev, r, now, "batch", user.tz_offset_min, quiet);
     if (next && next !== prev) {
       stmts.push(
         db
@@ -414,14 +415,15 @@ export async function handleGradeText(env: Env, user: User, text: string, now: n
   const n = (await getMarks(env.DB, session.id)).length;
   const results = parseGradeText(text, n);
   if (!results) return t.gradeHelp;
-  const summary = await commitBatch(env.DB, session, user, () => results, now);
+  const cfg = config(env);
+  const summary = await commitBatch(env.DB, session, user, () => results, now, cfg.quiet);
   if (!summary) return t.noOpenBatch;
   // The item buttons would otherwise stay tappable on a closed batch. Keep the drill
-  // button if the batch was sent with one (20:00, not drilled today).
+  // button if the batch was sent with one (DRILL_REMINDER_HOUR, not drilled today).
   if (session.message_id) {
     const tz = user.tz_offset_min;
-    const keepDrill = localHour(session.created_at, tz) === 20 && user.last_drill_date !== localDate(now, tz);
-    await editKeyboard(env.TELEGRAM_BOT_TOKEN, user.id, session.message_id, { inline_keyboard: keepDrill ? [drillRow(config(env).drillUrl)] : [] });
+    const keepDrill = localHour(session.created_at, tz) === cfg.drillReminderHour && user.last_drill_date !== localDate(now, tz);
+    await editKeyboard(env.TELEGRAM_BOT_TOKEN, user.id, session.message_id, { inline_keyboard: keepDrill ? [drillRow(cfg.drillUrl)] : [] });
   }
   return renderSummary(summary);
 }
@@ -457,7 +459,7 @@ export async function handleCommit(env: Env, user: User, cq: TgCallbackQuery, no
 
   const marks = readMarks(cq.message?.reply_markup);
   const fill: Result = m[1] === "a" ? "hit" : "skip";
-  const summary = await commitBatch(env.DB, session, user, (stored) => stored.map((_, i) => marks.get(i + 1) ?? fill), now);
+  const summary = await commitBatch(env.DB, session, user, (stored) => stored.map((_, i) => marks.get(i + 1) ?? fill), now, config(env).quiet);
   if (!summary) return t.batchClosed;
 
   const token = env.TELEGRAM_BOT_TOKEN;

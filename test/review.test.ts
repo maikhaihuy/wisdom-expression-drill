@@ -49,6 +49,17 @@ describe("planBatches and createBatch", () => {
     expect(plan.sessionId).toBe(`b-5-${T0}`);
   });
 
+  it("takes BATCH_MAX from config: 20 due → the 15 highest-priority", async () => {
+    const user = await addUser(5);
+    await addExpressions(ids("d", 20));
+    // Miss rate falls as the number grows: d01 is hardest.
+    for (let i = 1; i <= 20; i++) await setState(5, `d${String(i).padStart(2, "0")}`, { due_at: T0 - HOUR, hits: i, misses: 1 });
+
+    expect(cfg().batchMax).toBe(15);
+    const plan = (await planBatches(env.DB, [user], T0, cfg(), deps.rng)).get(5)!;
+    expect(plan.items.map((i) => i.id).sort()).toEqual(ids("d", 15));
+  });
+
   it("new items in course order: unit 1 positions 7–9 before any unit-2 item", async () => {
     const user = await addUser(5);
     // Inserted out of order on purpose; unit 1 positions 1–6 are already learned.
@@ -78,18 +89,19 @@ describe("planBatches and createBatch", () => {
     await addExpressions(ids("e", 8));
     await setState(5, "e01", { box: 3 });
     const before = await allStates(5);
-    // Open 10:00 batch with an uncommitted mark.
-    await addSession("b-5-old", 5, ["e01", "e02"], { createdAt: T0 - 4 * HOUR, results: ["hit", null] });
+    // The user never graded the 07:00 batch (one mark left uncommitted); the 12:00 batch is sent.
+    const noon = T0 - 2 * HOUR; // 12:00 local (UTC+7)
+    await addSession("b-5-old", 5, ["e01", "e02"], { createdAt: T0 - 7 * HOUR, results: ["hit", null] });
 
     const plan: BatchPlan = {
-      sessionId: `b-5-${T0}`,
+      sessionId: `b-5-${noon}`,
       userId: 5,
       newCount: 2,
       items: (["e03", "e04", "e05"] as const).map((id, i) => ({ id, en: id, cue: id, examples: "[]", box: 0, due_at: 0, hits: 0, misses: 0, isNew: i < 2 })),
     };
-    await createBatch(env.DB, plan, 321, user, T0);
+    await createBatch(env.DB, plan, 321, user, noon);
 
-    expect((await getSessionRow("b-5-old"))!.closed_at).toBe(T0);
+    expect((await getSessionRow("b-5-old"))!.closed_at).toBe(noon);
     expect((await itemResults("b-5-old")).map((r) => [r.result, r.answered_at])).toEqual([
       ["skip", null],
       ["skip", null],
@@ -150,10 +162,22 @@ describe("renderBatch", () => {
     expect(reply_markup).toMatchSnapshot();
   });
 
-  it("shows the local time and counts", () => {
-    const { text } = renderBatch(plan, T0, 420, null);
-    expect(text.split("\n")[0]).toBe("<b>Ôn 14:00</b> · 7 cụm (2 mới)");
+  it("shows the local time and counts: a 15-item batch with 3 new at 12:00", () => {
+    const big: BatchPlan = {
+      ...plan,
+      newCount: 3,
+      items: [...plan.items, ...ids("x", 8).map((id) => ({ id, en: `en ${id}`, cue: `cue ${id}`, examples: "[]", box: 1, due_at: 0, hits: 0, misses: 0, isNew: false }))].map(
+        (x, i) => ({ ...x, isNew: i < 3 }),
+      ),
+    };
+    const noon = T0 - 2 * HOUR; // 12:00 local (UTC+7)
+    const { text, reply_markup } = renderBatch(big, noon, 420, null);
+    expect(text.split("\n")[0]).toBe("<b>Ôn 12:00</b> · 15 cụm (3 mới)");
     expect(text).toContain("1. bỏ qua lỗi nhỏ — someone cuts in line\n   <tg-spoiler>let it slide</tg-spoiler>");
+    expect(text).toContain("15. cue x08\n   <tg-spoiler>en x08</tg-spoiler>");
+    expect(text.length).toBeLessThan(4096);
+    // Three full rows of 5 item buttons, then the commit row.
+    expect(reply_markup.inline_keyboard.map((r) => r.length)).toEqual([5, 5, 5, 2]);
   });
 
   it("escapes HTML in cues and expressions", () => {
@@ -240,15 +264,35 @@ describe("readMarks and toggleKeyboard", () => {
 describe("scheduled batches", () => {
   const at = (hourUtc: number) => Date.UTC(2026, 9, 26, hourUtc) / 1000;
 
-  it("07:00 UTC → a UTC+7 user receives the 14:00 batch", async () => {
+  it("05:00 UTC → a UTC+7 user receives the 12:00 batch", async () => {
     await addUser(5);
     await addExpressions(ids("e", 6));
     const tg = mockTelegram();
-    await runSchedule(env, at(7), deps);
+    await runSchedule(env, at(5), deps);
     expect(tg.sent()).toHaveLength(1);
     expect(tg.sent()[0].body.chat_id).toBe(5);
-    expect(tg.sent()[0].body.text).toContain("Ôn 14:00");
+    expect(tg.sent()[0].body.text).toContain("Ôn 12:00");
     expect(await latestBatch(5)).toMatchObject({ message_id: 500, closed_at: null });
+  });
+
+  it("00:00 and 15:00 UTC → the 07:00 and 22:00 local batches", async () => {
+    await addUser(5);
+    await addExpressions(ids("e", 6));
+    const tg = mockTelegram();
+    await runSchedule(env, at(0), deps);
+    await runSchedule(env, at(15), deps);
+    expect(tg.sent().map((c) => (c.body.text as string).split("\n")[0])).toEqual([
+      expect.stringContaining("Ôn 07:00"),
+      expect.stringContaining("Ôn 22:00"),
+    ]);
+  });
+
+  it("a whole UTC day sends exactly the 07:00, 12:00, 17:00 and 22:00 local batches", async () => {
+    await addUser(5);
+    await addExpressions(ids("e", 6));
+    const tg = mockTelegram();
+    for (let h = 0; h < 24; h++) await runSchedule(env, at(h), deps);
+    expect(tg.sent().map((c) => (c.body.text as string).match(/Ôn (\d\d:\d\d)/)![1])).toEqual(["07:00", "12:00", "17:00", "22:00"]);
   });
 
   it("16:00 UTC → nothing (23:00 local)", async () => {
@@ -259,10 +303,12 @@ describe("scheduled batches", () => {
     expect(tg.calls).toHaveLength(0);
   });
 
-  it("odd local hours send nothing", async () => {
+  it("hours between batch hours send nothing", async () => {
     await addUser(5);
     await addExpressions(ids("e", 6));
     const tg = mockTelegram();
+    await runSchedule(env, at(3), deps); // 10:00 local
+    await runSchedule(env, at(7), deps); // 14:00 local (a batch hour in the old schedule)
     await runSchedule(env, at(8), deps); // 15:00 local
     expect(tg.calls).toHaveLength(0);
   });
@@ -274,17 +320,19 @@ describe("scheduled batches", () => {
     const tg = mockTelegram();
     await runSchedule(env, at(6), deps); // 13:00 UTC+7, 15:00 UTC+9 → nobody
     expect(tg.sent()).toHaveLength(0);
-    await runSchedule(env, at(5), deps); // 12:00 UTC+7, 14:00 UTC+9 → both
-    expect(tg.sent().map((c) => c.body.chat_id).sort()).toEqual([5, 6]);
+    await runSchedule(env, at(5), deps); // 12:00 UTC+7, 14:00 UTC+9 → only UTC+7
+    expect(tg.sent().map((c) => c.body.chat_id)).toEqual([5]);
+    await runSchedule(env, at(8), deps); // 15:00 UTC+7, 17:00 UTC+9 → only UTC+9
+    expect(tg.sent().map((c) => c.body.chat_id)).toEqual([5, 6]);
   });
 
   it("skips paused and inactive users", async () => {
-    await addUser(5, { paused_until: at(7) + HOUR });
+    await addUser(5, { paused_until: at(5) + HOUR });
     await addUser(6, { active: 0 });
-    await addUser(7, { paused_until: at(7) - HOUR }); // pause already over
+    await addUser(7, { paused_until: at(5) - HOUR }); // pause already over
     await addExpressions(ids("e", 6));
     const tg = mockTelegram();
-    await runSchedule(env, at(7), deps);
+    await runSchedule(env, at(5), deps);
     expect(tg.sent().map((c) => c.body.chat_id)).toEqual([7]);
   });
 
@@ -296,7 +344,7 @@ describe("scheduled batches", () => {
     const orig = console.error;
     console.error = (...a: unknown[]) => errors.push(a);
     try {
-      await runSchedule(env, at(7), deps);
+      await runSchedule(env, at(5), deps);
     } finally {
       console.error = orig;
     }
@@ -312,22 +360,22 @@ describe("scheduled batches", () => {
     await addUser(6);
     await addExpressions(ids("e", 6));
     const tg = mockTelegram((c) => (c.body.chat_id === 5 ? forbidden() : undefined));
-    await runSchedule(env, at(7), deps);
+    await runSchedule(env, at(5), deps);
     expect(await count("users", "id = 5 AND active = 0")).toBe(1);
     expect(await count("users", "id = 6 AND active = 1")).toBe(1);
 
     tg.calls.length = 0;
-    await runSchedule(env, at(9), deps);
+    await runSchedule(env, at(10), deps);
     expect(tg.sent().map((c) => c.body.chat_id)).toEqual([6]);
   });
 
-  it("20:00 batch has the drill button unless the user drilled today", async () => {
-    await addUser(5);
-    await addUser(6, { last_drill_date: "2026-10-26" });
-    await addUser(7, { last_drill_date: "2026-10-25" });
+  it("17:00 batch has the drill button unless the user drilled today", async () => {
+    await addUser(5); // never drilled
+    await addUser(6, { last_drill_date: "2026-10-26" }); // drilled today (e.g. at 07:30 local)
+    await addUser(7, { last_drill_date: "2026-10-25" }); // drilled yesterday
     await addExpressions(ids("e", 6));
     const tg = mockTelegram();
-    await runSchedule(env, at(13), deps); // 20:00 local
+    await runSchedule(env, at(10), deps); // 17:00 local
     const hasDrill = (chatId: number) =>
       (tg.sent().find((c) => c.body.chat_id === chatId)!.body.reply_markup as InlineKeyboardMarkup).inline_keyboard.some((r) => r.some((b) => b.web_app));
     expect(hasDrill(5)).toBe(true);
@@ -339,14 +387,14 @@ describe("scheduled batches", () => {
     await addUser(5);
     await addExpressions(ids("e", 6));
     const tg = mockTelegram();
-    await runSchedule(env, at(7), deps);
+    await runSchedule(env, at(5), deps);
     expect(JSON.stringify(tg.sent()[0].body.reply_markup)).not.toContain("web_app");
   });
 
   it("sends nothing when the bank is empty", async () => {
     await addUser(5);
     const tg = mockTelegram();
-    await runSchedule(env, at(7), deps);
+    await runSchedule(env, at(5), deps);
     expect(tg.calls).toHaveLength(0);
   });
 
@@ -355,7 +403,7 @@ describe("scheduled batches", () => {
     await addExpressions(ids("e", 6));
     const tg = mockTelegram();
     const ctx = createExecutionContext();
-    await worker.scheduled(createScheduledController({ scheduledTime: new Date(at(7) * 1000), cron: "0 * * * *" }), env, ctx);
+    await worker.scheduled(createScheduledController({ scheduledTime: new Date(at(5) * 1000), cron: "0 * * * *" }), env, ctx);
     await waitOnExecutionContext(ctx);
     expect(tg.sent()).toHaveLength(1);
   });
@@ -542,8 +590,8 @@ describe("grading with buttons", () => {
   it("the cron also removes the buttons of the batch it closes", async () => {
     await openBatch(6);
     const tg = mockTelegram();
-    await runSchedule(env, T0 + HOUR, deps); // 15:00 local: odd hour, nothing
-    await runSchedule(env, T0 + 2 * HOUR, deps); // 16:00 local
+    await runSchedule(env, T0 + 2 * HOUR, deps); // 16:00 local: not a batch hour, nothing
+    await runSchedule(env, T0 + 3 * HOUR, deps); // 17:00 local
     expect(tg.edits().map((c) => c.body)).toEqual([expect.objectContaining({ chat_id: 5, message_id: 77, reply_markup: { inline_keyboard: [] } })]);
   });
 });
@@ -611,12 +659,12 @@ describe("text grading removes the batch's buttons", () => {
     expect(tg.edits().map((c) => c.body)).toEqual([expect.objectContaining({ message_id: 77, reply_markup: { inline_keyboard: [] } })]);
   });
 
-  it("keeps the drill button on the 20:00 batch when the user has not drilled", async () => {
+  it("keeps the drill button on the 17:00 batch when the user has not drilled", async () => {
     await addUser(5);
     await addExpressions(["a"]);
-    await addSession("b-5-1", 5, ["a"], { createdAt: T0 + 6 * HOUR }); // 20:00 local
+    await addSession("b-5-1", 5, ["a"], { createdAt: T0 + 3 * HOUR }); // 17:00 local
     const tg = mockTelegram();
-    await send(msg(5, "o"), T0 + 6 * HOUR + 60);
+    await send(msg(5, "o"), T0 + 3 * HOUR + 60);
     expect(tg.edits()[0].body.reply_markup).toEqual({ inline_keyboard: [[{ text: t.drillButton, web_app: { url: "https://drill.test/drill/" } }]] });
   });
 });

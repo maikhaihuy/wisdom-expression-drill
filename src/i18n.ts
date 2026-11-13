@@ -20,7 +20,7 @@ export const t = {
   welcomeAdmin: (name: string) =>
     `Chào ${name}! Bạn là quản trị viên.\nDùng /invite để mời thành viên, /next để ôn ngay.`,
   welcomeMember: (name: string) =>
-    `Chào ${name}! Bot sẽ gửi bạn 5–10 cụm mỗi 2 giờ, từ 08:00 đến 22:00.\nDùng /next để ôn ngay.`,
+    `Chào ${name}! Bot sẽ gửi bạn 5–15 cụm, 4 lần mỗi ngày: 07:00, 12:00, 17:00 và 22:00.\nDùng /next để ôn ngay.`,
   welcomeBack: (name: string) => `Chào mừng ${name} quay lại! Tiến độ của bạn vẫn được giữ nguyên.`,
   alreadyRegistered: "Bạn đã đăng ký rồi. Dùng /next để ôn ngay.",
   inviteRequired: "Bot chỉ dành cho thành viên được mời.\nGửi <code>/start &lt;mã mời&gt;</code> để đăng ký.",

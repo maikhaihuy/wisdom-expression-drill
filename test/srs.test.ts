@@ -17,28 +17,39 @@ describe("intervals and quiet hours", () => {
     expect(nextDue(T, 3, TZ)).toBe(T + 3 * D);
   });
 
-  it("a due time at 00:30 local moves to 08:00 that same calendar day", () => {
-    const at = local(2026, 10, 26, 20, 30); // miss at 20:30 → +4h = 00:30 on the 27th
-    expect(nextDue(at, 1, TZ)).toBe(local(2026, 10, 27, 8));
+  it("a miss at 22:00 local is due at 02:00, which moves to 07:00 that same calendar day", () => {
+    expect(nextDue(local(2026, 10, 26, 22), 1, TZ)).toBe(local(2026, 10, 27, 7));
+    expect(applyResult(state(), "miss", local(2026, 10, 26, 22), "batch", TZ)!.due_at).toBe(local(2026, 10, 27, 7));
   });
 
-  it("a due time at 23:00 local moves to 08:00 the next morning", () => {
-    expect(nextDue(local(2026, 10, 26, 19), 1, TZ)).toBe(local(2026, 10, 27, 8));
+  it("a miss at 07:00 is due at 11:00, in time for the 12:00 batch", () => {
+    expect(nextDue(local(2026, 10, 26, 7), 1, TZ)).toBe(local(2026, 10, 26, 11));
   });
 
-  it("22:00 and 08:00 exactly are allowed", () => {
+  it("a due time at 23:00 local moves to 07:00 the next morning", () => {
+    expect(nextDue(local(2026, 10, 26, 19), 1, TZ)).toBe(local(2026, 10, 27, 7));
+  });
+
+  it("22:00 and 07:00 exactly are allowed", () => {
     expect(nextDue(local(2026, 10, 26, 18), 1, TZ)).toBe(local(2026, 10, 26, 22));
-    expect(nextDue(local(2026, 10, 26, 4), 1, TZ)).toBe(local(2026, 10, 26, 8));
+    expect(nextDue(local(2026, 10, 26, 3), 1, TZ)).toBe(local(2026, 10, 26, 7));
   });
 
   it("day intervals keep the time of day unless it is quiet", () => {
-    expect(nextDue(local(2026, 10, 26, 23, 15), 2, TZ)).toBe(local(2026, 10, 28, 8));
+    expect(nextDue(local(2026, 10, 26, 23, 15), 2, TZ)).toBe(local(2026, 10, 28, 7));
   });
 
   it("works for negative offsets", () => {
     const tz = -300; // UTC-5
     const at = Date.UTC(2026, 9, 26, 20, 30) / 1000 + 300 * 60; // 20:30 local
-    expect(nextDue(at, 1, tz)).toBe(Date.UTC(2026, 9, 27, 8) / 1000 + 300 * 60);
+    expect(nextDue(at, 1, tz)).toBe(Date.UTC(2026, 9, 27, 7) / 1000 + 300 * 60);
+  });
+
+  it("takes the quiet window from its argument", () => {
+    const quiet = { start: 21, end: 8 };
+    expect(nextDue(local(2026, 10, 26, 18), 1, TZ, quiet)).toBe(local(2026, 10, 27, 8)); // 22:00 is quiet now
+    expect(nextDue(local(2026, 10, 26, 3), 1, TZ, quiet)).toBe(local(2026, 10, 26, 8));
+    expect(applyResult(state(), "miss", local(2026, 10, 26, 22), "batch", TZ, quiet)!.due_at).toBe(local(2026, 10, 27, 8));
   });
 });
 
@@ -107,15 +118,15 @@ describe("missRate", () => {
 const cand = (id: string, c: Partial<Candidate> = {}): Candidate => ({ id, box: 1, due_at: T - H, hits: 0, misses: 0, ...c });
 const many = (prefix: string, n: number, f: (i: number) => Partial<Candidate> = () => ({})) =>
   Array.from({ length: n }, (_, i) => cand(`${prefix}${i}`, f(i)));
-const base = { previousBatchIds: new Set<string>(), newAllowed: 3, min: 5, max: 10, rng: () => 0.5 };
+const base = { previousBatchIds: new Set<string>(), newAllowed: 3, min: 5, max: 15, rng: () => 0.5 };
 const idsOf = (xs: Candidate[]) => xs.map((x) => x.id).sort();
 
 describe("selectBatch", () => {
-  it("many due: the 10 highest-priority due items", () => {
+  it("many due: 20 due → the 15 highest-priority due items", () => {
     // miss rate falls as i grows: d0 is hardest.
-    const due = many("d", 14, (i) => ({ hits: i, misses: 1 }));
+    const due = many("d", 20, (i) => ({ hits: i, misses: 1 }));
     const out = selectBatch({ ...base, due, fresh: many("n", 5), notDue: [] });
-    expect(idsOf(out)).toEqual(idsOf(due.slice(0, 10)));
+    expect(idsOf(out)).toEqual(idsOf(due.slice(0, 15)));
   });
 
   it("orders due items by miss rate, then box, then due time", () => {
@@ -160,9 +171,14 @@ describe("selectBatch", () => {
   });
 
   it("skipped item stays out of the next batch when enough else is due", () => {
-    const due = [cand("skipped", { misses: 9 }), ...many("d", 8)];
-    const out = selectBatch({ ...base, previousBatchIds: new Set(["skipped"]), due, fresh: [], notDue: [] });
-    expect(idsOf(out)).toEqual(idsOf(due.slice(1)));
+    // Skipped in the 07:00 batch, still due at 12:00, with 14 other due items.
+    const others = many("d", 14);
+    const due = [cand("skipped", { misses: 9 }), ...others];
+    const at12 = selectBatch({ ...base, previousBatchIds: new Set(["skipped"]), due, fresh: [], notDue: [] });
+    expect(idsOf(at12)).toEqual(idsOf(others));
+    // At 17:00 the previous batch is the 12:00 one, so the skipped item may come back.
+    const at17 = selectBatch({ ...base, previousBatchIds: new Set(at12.map((c) => c.id)), due, fresh: [], notDue: [] });
+    expect(at17.map((c) => c.id)).toContain("skipped");
   });
 
   it("exclusion is relaxed for a small bank", () => {

@@ -257,7 +257,7 @@ describe("POST /api/drill/answers", () => {
 // ---------- 1.5 finish ----------
 
 describe("POST /api/drill/finish", () => {
-  it("48 cards, 40 first-try hits → 83%, chat summary, and no drill button at 20:00", async () => {
+  it("48 cards, 40 first-try hits → 83%, chat summary, and no drill button at the 17:00 drill-reminder batch", async () => {
     const exprs = await learnedUser(60);
     const tg = mockTelegram();
     const { body } = await api("start", undefined);
@@ -286,7 +286,7 @@ describe("POST /api/drill/finish", () => {
     expect(chat[0].body.text).toContain(`✗ <b>en e41</b>`);
 
     tg.calls.length = 0;
-    await runSchedule(env, T0 + 6 * HOUR, deps); // 20:00 local
+    await runSchedule(env, T0 + 3 * HOUR, deps); // 17:00 local
     const markup = tg.sent()[0].body.reply_markup as InlineKeyboardMarkup;
     expect(markup.inline_keyboard.some((row) => row.some((b) => b.web_app))).toBe(false);
   });
@@ -492,7 +492,7 @@ describe("POST /api/drill/start with a unit", () => {
 });
 
 describe("POST /api/drill/finish for a unit", () => {
-  it("unit 4, 20 cards, 18 first-try → 90%, unit named, last_drill_date unchanged, 20:00 still has the drill button", async () => {
+  it("unit 4, 20 cards, 18 first-try → 90%, unit named, last_drill_date unchanged, the 17:00 batch still has the drill button", async () => {
     await addUser(5);
     const exprs = await unitBank(4, 20, 20);
     const tg = mockTelegram();
@@ -511,7 +511,7 @@ describe("POST /api/drill/finish for a unit", () => {
     expect(text).toContain("90%");
 
     tg.calls.length = 0;
-    await runSchedule(env, T0 + 6 * HOUR, deps); // 20:00 local
+    await runSchedule(env, T0 + 3 * HOUR, deps); // 17:00 local
     const markup = tg.sent()[0].body.reply_markup as InlineKeyboardMarkup;
     expect(markup.inline_keyboard.some((row) => row.some((b) => b.web_app))).toBe(true);
   });

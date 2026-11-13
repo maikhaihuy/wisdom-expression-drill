@@ -19,8 +19,12 @@ crons = ["0 * * * *"]
 [vars]
 PUBLIC_URL = "https://expression-drill.maikhaihuy.workers.dev"
 DEFAULT_TZ_OFFSET_MIN = "420"
+BATCH_HOURS = "7,12,17,22"
 BATCH_MIN = "5"
-BATCH_MAX = "10"
+BATCH_MAX = "15"
+DRILL_REMINDER_HOUR = "17"
+QUIET_START_HOUR = "22"   # due times after this hour…
+QUIET_END_HOUR = "7"      # …or before this hour move to QUIET_END_HOUR next morning
 NEW_PER_BATCH = "3"
 NEW_PER_DAY = "20"
 DRILL_SECONDS = "300"

@@ -23,8 +23,7 @@ export function formatDateTime(now: number, tzMin: number): string {
   return `${iso.slice(11, 16)} ${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 }
 
-// Batches go out at even local hours from 08:00 to 22:00.
-export function isBatchHour(now: number, tzMin: number): boolean {
-  const h = localHour(now, tzMin);
-  return h % 2 === 0 && h >= 8 && h <= 22;
+// Batches go out at the local hours in `batchHours` (BATCH_HOURS).
+export function isBatchHour(now: number, tzMin: number, batchHours: readonly number[]): boolean {
+  return batchHours.includes(localHour(now, tzMin));
 }

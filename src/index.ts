@@ -13,8 +13,12 @@ export interface Env {
   ADMIN_CHAT_ID: string;
   PUBLIC_URL: string;
   DEFAULT_TZ_OFFSET_MIN?: string;
+  BATCH_HOURS?: string;
   BATCH_MIN?: string;
   BATCH_MAX?: string;
+  DRILL_REMINDER_HOUR?: string;
+  QUIET_START_HOUR?: string;
+  QUIET_END_HOUR?: string;
   NEW_PER_BATCH?: string;
   NEW_PER_DAY?: string;
   DRILL_SECONDS?: string;

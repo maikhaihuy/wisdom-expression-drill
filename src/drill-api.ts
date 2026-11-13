@@ -183,6 +183,7 @@ const OPEN = "EXISTS (SELECT 1 FROM sessions WHERE id = ?1 AND closed_at IS NULL
 async function answers(env: Env, user: User, sessionId: string, raw: unknown, now: number): Promise<Response> {
   const list = parseAnswers(raw);
   if (!list) return json({ error: "invalid_answers" }, 422);
+  const cfg = config(env);
   const db = env.DB;
   const exprIds = [...new Set(list.map((a) => a.exprId))];
 
@@ -212,7 +213,7 @@ async function answers(env: Env, user: User, sessionId: string, raw: unknown, no
     seen.add(a.exprId);
 
     if (firstTry) {
-      const next = applyResult(state.get(a.exprId)!, a.result, now, "drill", user.tz_offset_min)!;
+      const next = applyResult(state.get(a.exprId)!, a.result, now, "drill", user.tz_offset_min, cfg.quiet)!;
       state.set(a.exprId, next);
       // Guarded inside the transaction: applies only if this position and expression are
       // not stored yet, so a concurrent duplicate submission cannot apply it twice.

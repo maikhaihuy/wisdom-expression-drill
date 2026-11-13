@@ -50,7 +50,7 @@ The file name starts with a dot. Wrangler only reads `.dev.vars`, and only that 
 
    Generate the webhook secret with, for example, `openssl rand -hex 32`.
 
-4. Set `PUBLIC_URL` in `wrangler.toml` `[vars]` to the Worker's URL. The 20:00 batch uses it to open the drill Mini App.
+4. Set `PUBLIC_URL` in `wrangler.toml` `[vars]` to the Worker's URL. The drill-reminder batch (17:00) uses it to open the drill Mini App.
 
 5. Deploy:
 
@@ -111,14 +111,14 @@ Run it again whenever the command list in `src/i18n.ts` changes. The scripts nee
 
 ### Schedule
 
-The cron runs every hour (`0 * * * *`). Each run sends one batch to every active, unpaused user whose local time is an even hour from 08:00 to 22:00. Local time comes from each user's `/tz`, which defaults to `DEFAULT_TZ_OFFSET_MIN` (UTC+7).
+The cron runs every hour (`0 * * * *`). Each run sends one batch to every active, unpaused user whose local time is one of the batch hours (07:00, 12:00, 17:00 and 22:00 by default). Local time comes from each user's `/tz`, which defaults to `DEFAULT_TZ_OFFSET_MIN` (UTC+7).
 
-- A batch has 5–10 expressions. Due items come first, hardest first; then new items in course order, lowest unit and position first (at most 3 per batch and 20 per day); then items that aren't due yet, to reach 5. The previous batch's items are left out when possible.
+- A batch has 5–15 expressions. Due items come first, hardest first; then new items in course order, lowest unit and position first (at most 3 per batch and 20 per day); then items that aren't due yet, to reach 5. The previous batch's items are left out when possible.
 - Sending a new batch closes the previous one: all of its items count as skipped, including marks that were never committed, and its buttons are removed.
-- When the user has not drilled today, the 20:00 batch also has a button that opens the drill Mini App.
-- Leitner boxes 1–6 set the next review: 4 h, 1 d, 3 d, 7 d, 16 d, 35 d. A miss sends an item back to box 1. Due times that would fall between 22:00 and 08:00 move to 08:00.
+- When the user has not drilled today, the 17:00 batch also has a button that opens the drill Mini App.
+- Leitner boxes 1–6 set the next review: 4 h, 1 d, 3 d, 7 d, 16 d, 35 d. A miss sends an item back to box 1. Due times that would fall between 22:00 and 07:00 move to 07:00, ready for the first batch.
 
-The batch sizes and new-item limits are the `BATCH_MIN`, `BATCH_MAX`, `NEW_PER_BATCH` and `NEW_PER_DAY` vars in `wrangler.toml`.
+The schedule, batch sizes and new-item limits are the `BATCH_HOURS`, `DRILL_REMINDER_HOUR`, `QUIET_START_HOUR`, `QUIET_END_HOUR`, `BATCH_MIN`, `BATCH_MAX`, `NEW_PER_BATCH` and `NEW_PER_DAY` vars in `wrangler.toml`. Invalid values (an hour outside 0–23, `BATCH_MAX` below `BATCH_MIN`) make the Worker throw.
 
 On the free plan, one cron run uses 2 D1 queries plus 1 per user who gets a batch, and 1 Telegram call per user, plus 1 more to remove the buttons when that user left the previous batch ungraded. Both are capped at 50 per run, so one hour can serve about 45 users who grade their batches, and about 25 who don't. Above that, move the sends to a Queue.
 
@@ -164,14 +164,14 @@ A timed, self-graded drill of at most 5 minutes that runs inside Telegram. It en
 - **Deck (unit):** the user's learned expressions (box 1 or higher) from that unit, in random order, up to 60. Unlearned expressions are never included. If a unit has unlearned expressions, its start screen also offers **Luyện thử cả unit**.
 - **Luyện thử (practice):** every active expression of one unit, learned or not, in random order, up to 60. It works like the drill but **saves nothing**: no session, no answers, no review-state change, no new expressions introduced, nothing in `/stats` or `/hard`, no chat message, and it doesn't mark the day as drilled. The summary is shown only in the app, tagged **Luyện thử · không lưu**. Units with nothing learned open practice from the picker; `/drill N` for such a unit offers **Luyện thử unit N** or **Chọn unit khác**.
 - **Missed cards** come back 3–5 cards later until answered correctly. Only the first attempt at each expression counts toward review state. An early correct answer on a card that isn't due yet only adds a hit; it never moves the card to a higher box.
-- **Finishing** sends a summary to the chat: cards, first-try accuracy, median reaction time and the missed expressions. A unit drill's summary names the unit. Only a **Tất cả** drill marks the day as drilled, so the 20:00 batch leaves out the drill button; a unit drill doesn't.
+- **Finishing** sends a summary to the chat: cards, first-try accuracy, median reaction time and the missed expressions. A unit drill's summary names the unit. Only a **Tất cả** drill marks the day as drilled, so the 17:00 batch leaves out the drill button; a unit drill doesn't.
 - **Settings:** `DRILL_SECONDS`, `CARD_SECONDS` and `DRILL_DECK_SIZE` in `wrangler.toml` `[vars]`.
 
 ### Setup
 
 The page lives in `public/drill/` and is served as static assets by the same Worker (`assets = { directory = "public" }`), so `npx wrangler deploy` publishes it. Check that `https://expression-drill.<subdomain>.workers.dev/drill/` loads; outside Telegram it shows a notice to open it from the bot.
 
-Users can open the drill in three ways: the button that `/drill` (or `/drill N`) sends, the button on the 20:00 batch, and the bot's menu button. To set the menu button, which sits next to the message field:
+Users can open the drill in three ways: the button that `/drill` (or `/drill N`) sends, the button on the 17:00 batch, and the bot's menu button. To set the menu button, which sits next to the message field:
 
 1. Open @BotFather and send `/mybots`, then choose the bot.
 2. Go to **Bot Settings → Menu Button → Configure menu button**.

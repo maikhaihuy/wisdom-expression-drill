@@ -17,25 +17,39 @@ export const INTERVAL_SEC = [0, 4 * 3600, 86400, 3 * 86400, 7 * 86400, 16 * 8640
 export const MAX_BOX = 6;
 
 const DAY = 86400;
-const QUIET_START = 22 * 3600;
-const QUIET_END = 8 * 3600;
 const mod = (a: number, n: number) => ((a % n) + n) % n;
 
-// Due time for an answer at `now` that leaves the card in `box`. A due time after
-// 22:00 or before 08:00 local moves to the next 08:00 local.
-export function nextDue(now: number, box: number, tzMin: number): number {
+// Local hours; the window spans midnight. Production passes the values from config.
+export interface QuietWindow {
+  start: number;
+  end: number;
+}
+export const DEFAULT_QUIET: QuietWindow = { start: 22, end: 7 };
+
+// Due time for an answer at `now` that leaves the card in `box`. A due time strictly after
+// `quiet.start`:00 or before `quiet.end`:00 local moves to the next `quiet.end`:00 local.
+export function nextDue(now: number, box: number, tzMin: number, quiet: QuietWindow = DEFAULT_QUIET): number {
   const offset = tzMin * 60;
+  const quietStart = quiet.start * 3600;
+  const quietEnd = quiet.end * 3600;
   const due = now + INTERVAL_SEC[box];
   const local = due + offset;
   const secOfDay = mod(local, DAY);
   const dayStart = local - secOfDay;
-  if (secOfDay < QUIET_END) return dayStart + QUIET_END - offset;
-  if (secOfDay > QUIET_START) return dayStart + DAY + QUIET_END - offset;
+  if (secOfDay < quietEnd) return dayStart + quietEnd - offset;
+  if (secOfDay > quietStart) return dayStart + DAY + quietEnd - offset;
   return due;
 }
 
 // Returns the new state, or the unchanged input for a skip (null stays null: no row is created).
-export function applyResult(s: CardState | null, r: Result, now: number, src: Source, tzMin: number): CardState | null {
+export function applyResult(
+  s: CardState | null,
+  r: Result,
+  now: number,
+  src: Source,
+  tzMin: number,
+  quiet: QuietWindow = DEFAULT_QUIET,
+): CardState | null {
   if (r === "skip") return s;
 
   if (r === "hit") {
@@ -44,7 +58,7 @@ export function applyResult(s: CardState | null, r: Result, now: number, src: So
     const box = Math.min((s?.box ?? 0) + 1, MAX_BOX);
     return {
       box,
-      due_at: nextDue(now, box, tzMin),
+      due_at: nextDue(now, box, tzMin, quiet),
       hits: (s?.hits ?? 0) + 1,
       misses: s?.misses ?? 0,
       lapses: s?.lapses ?? 0,
@@ -55,7 +69,7 @@ export function applyResult(s: CardState | null, r: Result, now: number, src: So
   const prevBox = s?.box ?? 0;
   return {
     box: 1,
-    due_at: nextDue(now, 1, tzMin),
+    due_at: nextDue(now, 1, tzMin, quiet),
     hits: s?.hits ?? 0,
     misses: (s?.misses ?? 0) + 1,
     lapses: (s?.lapses ?? 0) + (prevBox >= 3 ? 1 : 0),
